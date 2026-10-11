@@ -265,5 +265,156 @@ class EmployeeControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401));
     }
+
+    // ==========================================
+    // Phase 1.1: Termination & Validation Tests
+    // ==========================================
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees/{id}/terminate - Should permit ADMIN and return 200")
+    void testTerminateEmployeeAllowedForAdmin() throws Exception {
+        com.example.employee.dto.TerminateEmployeeRequestDto termDto =
+                new com.example.employee.dto.TerminateEmployeeRequestDto(LocalDate.now(), "Resignation approved");
+
+        Employee terminatedEmp = new Employee(1L, "Rahul", "Sharma", "rahul.sharma@example.com", "9876543210",
+                LocalDate.of(1995, 5, 14), "Male", "IT", "Developer",
+                new BigDecimal("85000.00"), LocalDate.of(2021, 6, 1), "Pune", com.example.employee.entity.EmploymentStatus.TERMINATED);
+        terminatedEmp.setTerminationDate(termDto.getEffectiveDate());
+        terminatedEmp.setTerminationReason(termDto.getReason());
+
+        when(employeeService.terminateEmployee(eq(1L), any(com.example.employee.dto.TerminateEmployeeRequestDto.class)))
+                .thenReturn(EmployeeResponseDto.fromEntity(terminatedEmp));
+
+        mockMvc.perform(post("/api/employees/1/terminate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(termDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("TERMINATED"))
+                .andExpect(jsonPath("$.terminationReason").value("Resignation approved"));
+    }
+
+    @Test
+    @WithMockUser(roles = "HR")
+    @DisplayName("POST /api/employees/{id}/terminate - Should permit HR and return 200")
+    void testTerminateEmployeeAllowedForHR() throws Exception {
+        com.example.employee.dto.TerminateEmployeeRequestDto termDto =
+                new com.example.employee.dto.TerminateEmployeeRequestDto(LocalDate.now(), "Contract completed");
+
+        Employee terminatedEmp = new Employee(1L, "Rahul", "Sharma", "rahul.sharma@example.com", "9876543210",
+                LocalDate.of(1995, 5, 14), "Male", "IT", "Developer",
+                new BigDecimal("85000.00"), LocalDate.of(2021, 6, 1), "Pune", com.example.employee.entity.EmploymentStatus.TERMINATED);
+        terminatedEmp.setTerminationDate(termDto.getEffectiveDate());
+        terminatedEmp.setTerminationReason(termDto.getReason());
+
+        when(employeeService.terminateEmployee(eq(1L), any(com.example.employee.dto.TerminateEmployeeRequestDto.class)))
+                .thenReturn(EmployeeResponseDto.fromEntity(terminatedEmp));
+
+        mockMvc.perform(post("/api/employees/1/terminate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(termDto)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("TERMINATED"));
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    @DisplayName("POST /api/employees/{id}/terminate - Should return 403 Forbidden for EMPLOYEE role")
+    void testTerminateEmployeeForbiddenForEmployee() throws Exception {
+        com.example.employee.dto.TerminateEmployeeRequestDto termDto =
+                new com.example.employee.dto.TerminateEmployeeRequestDto(LocalDate.now(), "Resignation");
+
+        mockMvc.perform(post("/api/employees/1/terminate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(termDto)))
+                .andExpect(status().isForbidden());
+
+        verify(employeeService, never()).terminateEmployee(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("POST /api/employees/{id}/terminate - Should return 401 Unauthorized for unauthenticated request")
+    void testTerminateEmployeeUnauthenticated() throws Exception {
+        com.example.employee.dto.TerminateEmployeeRequestDto termDto =
+                new com.example.employee.dto.TerminateEmployeeRequestDto(LocalDate.now(), "Resignation");
+
+        mockMvc.perform(post("/api/employees/1/terminate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(termDto)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees/{id}/terminate - Should return 400 when already terminated")
+    void testTerminateEmployeeAlreadyTerminated() throws Exception {
+        com.example.employee.dto.TerminateEmployeeRequestDto termDto =
+                new com.example.employee.dto.TerminateEmployeeRequestDto(LocalDate.now(), "Duplicate term");
+
+        when(employeeService.terminateEmployee(eq(1L), any(com.example.employee.dto.TerminateEmployeeRequestDto.class)))
+                .thenThrow(new IllegalStateException("Employee with ID 1 is already terminated."));
+
+        mockMvc.perform(post("/api/employees/1/terminate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(termDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Employee with ID 1 is already terminated."));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees/{id}/terminate - Should return 400 when termination date before DOJ")
+    void testTerminateEmployeeDateBeforeJoiningDate() throws Exception {
+        com.example.employee.dto.TerminateEmployeeRequestDto termDto =
+                new com.example.employee.dto.TerminateEmployeeRequestDto(LocalDate.of(2020, 1, 1), "Invalid date");
+
+        when(employeeService.terminateEmployee(eq(1L), any(com.example.employee.dto.TerminateEmployeeRequestDto.class)))
+                .thenThrow(new IllegalArgumentException("Termination effective date cannot be before the employee's joining date."));
+
+        mockMvc.perform(post("/api/employees/1/terminate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(termDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Termination effective date cannot be before the employee's joining date."));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees - Should reject future DOB with 400 Bad Request")
+    void testCreateEmployeeFutureDobRejected() throws Exception {
+        sampleRequestDto.setDateOfBirth(LocalDate.now().plusDays(5));
+
+        mockMvc.perform(post("/api/employees")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(sampleRequestDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors").isArray());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees - Should reject negative salary with 400 Bad Request")
+    void testCreateEmployeeNegativeSalaryRejected() throws Exception {
+        sampleRequestDto.setSalary(new BigDecimal("-1000.00"));
+
+        mockMvc.perform(post("/api/employees")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(sampleRequestDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors").isArray());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("PUT /api/employees/{id} - Should reject invalid email during update with 400 Bad Request")
+    void testUpdateEmployeeInvalidEmailRejected() throws Exception {
+        sampleRequestDto.setEmail("not-an-email");
+
+        mockMvc.perform(put("/api/employees/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(sampleRequestDto)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors").isArray());
+    }
 }
 

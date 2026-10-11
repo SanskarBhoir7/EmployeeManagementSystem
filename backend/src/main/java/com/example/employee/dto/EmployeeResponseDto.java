@@ -21,6 +21,8 @@ public class EmployeeResponseDto {
     private LocalDate joiningDate;
     private String address;
     private String status;
+    private LocalDate terminationDate;
+    private String terminationReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -45,7 +47,9 @@ public class EmployeeResponseDto {
         dto.setSalary(employee.getSalary());
         dto.setJoiningDate(employee.getJoiningDate());
         dto.setAddress(employee.getAddress());
-        dto.setStatus(employee.getStatus());
+        dto.setStatus(employee.getStatus() != null ? employee.getStatus().name() : "ACTIVE");
+        dto.setTerminationDate(employee.getTerminationDate());
+        dto.setTerminationReason(employee.getTerminationReason());
         dto.setCreatedAt(employee.getCreatedAt());
         dto.setUpdatedAt(employee.getUpdatedAt());
         return dto;
@@ -162,6 +166,22 @@ public class EmployeeResponseDto {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public LocalDate getTerminationDate() {
+        return terminationDate;
+    }
+
+    public void setTerminationDate(LocalDate terminationDate) {
+        this.terminationDate = terminationDate;
+    }
+
+    public String getTerminationReason() {
+        return terminationReason;
+    }
+
+    public void setTerminationReason(String terminationReason) {
+        this.terminationReason = terminationReason;
     }
 
     public LocalDateTime getCreatedAt() {

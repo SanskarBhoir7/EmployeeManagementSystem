@@ -77,6 +77,8 @@ async function fetchWithAuth(url, options = {}) {
 let currentEmployees = [];
 let currentRole = 'ADMIN';
 let activeDeleteId = null;
+let activeTerminateId = null;
+let activeTerminateJoiningDate = null;
 
 // Initialize on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -97,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     initChangePasswordModal();
     initRegisterUserModal();
+    initTerminateModal();
 
     if (currentRole === 'EMPLOYEE') {
         initEmployeeRoleView(user);
@@ -271,7 +274,7 @@ async function loadStats() {
 
         if (totalEl) totalEl.textContent = stats.total || 0;
         if (activeEl) activeEl.textContent = stats.active || 0;
-        if (inactiveEl) inactiveEl.textContent = stats.inactive || 0;
+        if (inactiveEl) inactiveEl.textContent = stats.terminated ? `${stats.inactive || 0} (${stats.terminated} Terminated)` : (stats.inactive || 0);
     } catch (err) {
         console.warn('Could not load server stats:', err);
     }
@@ -369,9 +372,28 @@ function renderEmployeeTable(employees) {
 
     tbody.innerHTML = employees.map(emp => {
         const initials = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase();
-        const statusClass = emp.status?.toLowerCase() === 'active' ? 'badge-status-active' : 'badge-status-inactive';
+        const isTerminated = emp.status?.toUpperCase() === 'TERMINATED';
+        const statusClass = emp.status?.toUpperCase() === 'ACTIVE'
+            ? 'badge-status-active'
+            : (isTerminated ? 'badge-status-terminated' : 'badge-status-inactive');
         const formattedSalary = emp.salary ? `₹${parseFloat(emp.salary).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formattedDate = emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
+
+        // Terminate button (ADMIN and HR for active employees)
+        let terminateButtonHtml = '';
+        if (currentRole === 'ADMIN' || currentRole === 'HR') {
+            if (!isTerminated) {
+                terminateButtonHtml = `
+                    <button class="btn btn-sm btn-outline-warning btn-action" onclick="openTerminateModal(${emp.id}, '${escapeQuotes(emp.fullName || emp.firstName)}', '${emp.joiningDate || ''}')" title="Terminate Employee">
+                        <i class="bi bi-person-x"></i>
+                    </button>`;
+            } else {
+                terminateButtonHtml = `
+                    <button class="btn btn-sm btn-outline-secondary btn-action" disabled title="Already Terminated">
+                        <i class="bi bi-person-x-fill text-danger"></i>
+                    </button>`;
+            }
+        }
 
         // Delete button restricted to ADMIN (HR cannot delete)
         const deleteButtonHtml = (currentRole === 'ADMIN')
@@ -383,13 +405,13 @@ function renderEmployeeTable(employees) {
                </button>`;
 
         return `
-            <tr>
+            <tr class="${isTerminated ? 'table-light text-muted' : ''}">
                 <td class="text-muted fw-semibold">#${emp.id}</td>
                 <td>
                     <div class="d-flex align-items-center">
-                        <div class="employee-avatar">${initials}</div>
+                        <div class="employee-avatar ${isTerminated ? 'bg-danger-subtle text-danger' : ''}">${initials}</div>
                         <div>
-                            <div class="fw-bold text-dark">${escapeHtml(emp.fullName || `${emp.firstName} ${emp.lastName}`)}</div>
+                            <div class="fw-bold ${isTerminated ? 'text-secondary text-decoration-line-through' : 'text-dark'}">${escapeHtml(emp.fullName || `${emp.firstName} ${emp.lastName}`)}</div>
                             <div class="text-muted small">${escapeHtml(emp.email)}</div>
                         </div>
                     </div>
@@ -407,6 +429,7 @@ function renderEmployeeTable(employees) {
                         <a href="add-employee.html?id=${emp.id}" class="btn btn-sm btn-outline-primary btn-action" title="Edit Employee">
                             <i class="bi bi-pencil"></i>
                         </a>
+                        ${terminateButtonHtml}
                         ${deleteButtonHtml}
                     </div>
                 </td>
@@ -451,7 +474,21 @@ async function viewEmployeeDetails(id) {
 
         const statusBadge = document.getElementById('viewModalStatusBadge');
         statusBadge.textContent = emp.status;
-        statusBadge.className = 'badge ' + (emp.status === 'Active' ? 'bg-success' : 'bg-secondary');
+        statusBadge.className = 'badge ' + (
+            emp.status === 'Active' ? 'bg-success' :
+            (emp.status === 'Terminated' ? 'bg-danger' : 'bg-secondary')
+        );
+
+        const terminationSection = document.getElementById('viewModalTerminationSection');
+        const terminationInfo = document.getElementById('viewModalTerminationInfo');
+        if (terminationSection && terminationInfo) {
+            if (emp.status === 'Terminated' && (emp.terminationDate || emp.terminationReason)) {
+                terminationSection.classList.remove('d-none');
+                terminationInfo.innerHTML = `<strong>Effective Date:</strong> ${emp.terminationDate || 'N/A'}<br><strong>Reason:</strong> ${escapeHtml(emp.terminationReason || 'N/A')}`;
+            } else {
+                terminationSection.classList.add('d-none');
+            }
+        }
 
         const initials = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase();
         document.getElementById('viewModalAvatar').textContent = initials;
@@ -461,6 +498,114 @@ async function viewEmployeeDetails(id) {
     } catch (err) {
         showToast(err.message, 'danger');
     }
+}
+
+/**
+ * Open Terminate Modal
+ */
+function openTerminateModal(id, name, joiningDate) {
+    if (currentRole !== 'ADMIN' && currentRole !== 'HR') {
+        showToast('Access Denied: Only ADMIN and HR can terminate employees.', 'danger');
+        return;
+    }
+    activeTerminateId = id;
+    activeTerminateJoiningDate = joiningDate;
+    const nameEl = document.getElementById('terminateEmployeeName');
+    if (nameEl) nameEl.textContent = name || `#${id}`;
+
+    const dateInput = document.getElementById('terminateEffectiveDate');
+    if (dateInput) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+        if (joiningDate) {
+            dateInput.min = joiningDate;
+        }
+    }
+    const reasonInput = document.getElementById('terminateReason');
+    if (reasonInput) reasonInput.value = '';
+
+    const alertBox = document.getElementById('terminateAlert');
+    if (alertBox) alertBox.classList.add('d-none');
+
+    const modalEl = document.getElementById('terminateConfirmModal');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
+
+/**
+ * Handle Employee Termination Submission via POST /api/employees/{id}/terminate
+ */
+function initTerminateModal() {
+    const form = document.getElementById('terminateEmployeeForm');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!activeTerminateId) return;
+
+        const effectiveDate = document.getElementById('terminateEffectiveDate')?.value;
+        const reason = document.getElementById('terminateReason')?.value.trim();
+        const alertBox = document.getElementById('terminateAlert');
+
+        if (!effectiveDate || !reason) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = 'Please provide both an effective termination date and reason.';
+                alertBox.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (activeTerminateJoiningDate && effectiveDate < activeTerminateJoiningDate) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = `Termination effective date (${effectiveDate}) cannot be before employee joining date (${activeTerminateJoiningDate}).`;
+                alertBox.classList.remove('d-none');
+            }
+            return;
+        }
+
+        const submitBtn = document.getElementById('confirmTerminateBtn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Terminating...';
+        }
+
+        try {
+            const response = await fetchWithAuth(`${API_BASE_URL}/${activeTerminateId}/terminate`, {
+                method: 'POST',
+                body: JSON.stringify({ effectiveDate, reason })
+            });
+
+            if (!response) return;
+
+            const resData = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(resData.message || 'Failed to terminate employee');
+            }
+
+            showToast('Employee terminated successfully. System access revoked.', 'success');
+            const modalEl = document.getElementById('terminateConfirmModal');
+            if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+
+            loadEmployees();
+            loadStats();
+        } catch (err) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = err.message;
+                alertBox.classList.remove('d-none');
+            }
+            showToast(err.message, 'danger');
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-person-x me-1"></i> Confirm Termination';
+            }
+        }
+    });
 }
 
 /**
@@ -584,13 +729,48 @@ async function handleFormSubmit(e, employeeId) {
     };
 
     let isValid = true;
-    if (!payload.firstName) { showFieldError('firstName', 'First name is required'); isValid = false; }
-    if (!payload.lastName) { showFieldError('lastName', 'Last name is required'); isValid = false; }
+    if (!payload.firstName) { showFieldError('firstName', 'First name cannot be blank'); isValid = false; }
+    if (!payload.lastName) { showFieldError('lastName', 'Last name cannot be blank'); isValid = false; }
     if (!payload.email || !validateEmail(payload.email)) { showFieldError('email', 'A valid email address is required'); isValid = false; }
     if (!payload.department) { showFieldError('department', 'Department is required'); isValid = false; }
-    if (isNaN(payload.salary) || payload.salary <= 0) { showFieldError('salary', 'Salary must be a positive number'); isValid = false; }
-    if (!payload.joiningDate) { showFieldError('joiningDate', 'Joining date is required'); isValid = false; }
-    if (!payload.status) { showFieldError('status', 'Status is required'); isValid = false; }
+    if (isNaN(payload.salary) || payload.salary <= 0 || payload.salary > 999999999.99) { showFieldError('salary', 'Salary must be a positive number up to 999,999,999.99'); isValid = false; }
+
+    if (!payload.dateOfBirth) {
+        showFieldError('dateOfBirth', 'Date of birth is required');
+        isValid = false;
+    } else {
+        const dob = new Date(payload.dateOfBirth);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (dob > today) {
+            showFieldError('dateOfBirth', 'Date of birth cannot be in the future');
+            isValid = false;
+        }
+    }
+
+    if (!payload.joiningDate) {
+        showFieldError('joiningDate', 'Date of joining is required');
+        isValid = false;
+    } else if (payload.dateOfBirth) {
+        const dob = new Date(payload.dateOfBirth);
+        const doj = new Date(payload.joiningDate);
+        if (doj <= dob) {
+            showFieldError('joiningDate', 'Date of joining must be strictly after date of birth');
+            isValid = false;
+        } else {
+            const minJoiningDate = new Date(dob);
+            minJoiningDate.setFullYear(minJoiningDate.getFullYear() + 18);
+            if (doj < minJoiningDate) {
+                showFieldError('joiningDate', 'Employee must be at least 18 years old on their joining date');
+                isValid = false;
+            }
+        }
+    }
+
+    if (payload.phone && !/^[+0-9\s\-()]{7,20}$/.test(payload.phone)) {
+        showFieldError('phone', 'Phone number must be a valid format between 7 and 20 digits');
+        isValid = false;
+    }
 
     if (!isValid) return;
 

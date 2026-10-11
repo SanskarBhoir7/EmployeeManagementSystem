@@ -50,6 +50,32 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
+        logger.warn("Illegal state: {}", ex.getMessage());
+        ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value());
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(org.springframework.dao.DataIntegrityViolationException ex) {
+        logger.warn("Database integrity violation: {}", ex.getMessage());
+        String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";
+        if (msg.contains("duplicate") || msg.contains("unique") || msg.contains("uk_")) {
+            ErrorResponse errorResponse = new ErrorResponse("A record with this unique value (such as email) already exists.", HttpStatus.CONFLICT.value());
+            return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+        }
+        ErrorResponse errorResponse = new ErrorResponse("Data integrity violation: the request violates database constraints.", HttpStatus.BAD_REQUEST.value());
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(org.springframework.security.authentication.DisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDisabledException(org.springframework.security.authentication.DisabledException ex) {
+        logger.warn("Disabled user account attempted login: {}", ex.getMessage());
+        ErrorResponse errorResponse = new ErrorResponse("Account is deactivated or employment has been terminated.", HttpStatus.UNAUTHORIZED.value());
+        return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
+    }
+
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
         logger.warn("Access denied: {}", ex.getMessage());

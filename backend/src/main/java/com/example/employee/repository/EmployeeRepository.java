@@ -1,6 +1,7 @@
 package com.example.employee.repository;
 
 import com.example.employee.entity.Employee;
+import com.example.employee.entity.EmploymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -27,7 +28,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     List<Employee> findByDepartmentIgnoreCase(String department);
 
-    List<Employee> findByStatusIgnoreCase(String status);
+    List<Employee> findByStatus(EmploymentStatus status);
 
-    List<Employee> findByDepartmentIgnoreCaseAndStatusIgnoreCase(String department, String status);
+    List<Employee> findByDepartmentIgnoreCaseAndStatus(String department, EmploymentStatus status);
 }

@@ -48,8 +48,15 @@ public class Employee {
     @Column(name = "address", length = 500)
     private String address;
 
+    @Convert(converter = EmploymentStatusConverter.class)
     @Column(name = "status", nullable = false, length = 20)
-    private String status; // "Active" or "Inactive"
+    private EmploymentStatus status = EmploymentStatus.ACTIVE;
+
+    @Column(name = "termination_date")
+    private LocalDate terminationDate;
+
+    @Column(name = "termination_reason", length = 500)
+    private String terminationReason;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -75,15 +82,41 @@ public class Employee {
         this.salary = salary;
         this.joiningDate = joiningDate;
         this.address = address;
-        this.status = status;
+        if (status != null && !status.isBlank()) {
+            try {
+                this.status = EmploymentStatus.valueOf(status.trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                this.status = EmploymentStatus.ACTIVE;
+            }
+        } else {
+            this.status = EmploymentStatus.ACTIVE;
+        }
+    }
+
+    public Employee(Long id, String firstName, String lastName, String email, String phone,
+                    LocalDate dateOfBirth, String gender, String department, String designation,
+                    BigDecimal salary, LocalDate joiningDate, String address, EmploymentStatus status) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.email = email;
+        this.phone = phone;
+        this.dateOfBirth = dateOfBirth;
+        this.gender = gender;
+        this.department = department;
+        this.designation = designation;
+        this.salary = salary;
+        this.joiningDate = joiningDate;
+        this.address = address;
+        this.status = status != null ? status : EmploymentStatus.ACTIVE;
     }
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
-        if (this.status == null || this.status.isBlank()) {
-            this.status = "Active";
+        if (this.status == null) {
+            this.status = EmploymentStatus.ACTIVE;
         }
     }
 
@@ -189,12 +222,40 @@ public class Employee {
         this.address = address;
     }
 
-    public String getStatus() {
+    public EmploymentStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
-        this.status = status;
+    public void setStatus(EmploymentStatus status) {
+        this.status = status != null ? status : EmploymentStatus.ACTIVE;
+    }
+
+    public void setStatus(String statusStr) {
+        if (statusStr != null && !statusStr.isBlank()) {
+            try {
+                this.status = EmploymentStatus.valueOf(statusStr.trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                this.status = EmploymentStatus.ACTIVE;
+            }
+        } else {
+            this.status = EmploymentStatus.ACTIVE;
+        }
+    }
+
+    public LocalDate getTerminationDate() {
+        return terminationDate;
+    }
+
+    public void setTerminationDate(LocalDate terminationDate) {
+        this.terminationDate = terminationDate;
+    }
+
+    public String getTerminationReason() {
+        return terminationReason;
+    }
+
+    public void setTerminationReason(String terminationReason) {
+        this.terminationReason = terminationReason;
     }
 
     public LocalDateTime getCreatedAt() {

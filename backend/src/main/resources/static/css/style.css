@@ -215,6 +215,12 @@ body {
     border: 1px solid #cbd5e1;
 }
 
+.badge-status-terminated {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
 .badge-department {
     background-color: #f1f5f9;
     color: #334155;

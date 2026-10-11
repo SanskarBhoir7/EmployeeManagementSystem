@@ -2,15 +2,21 @@ package com.example.employee.service.impl;
 
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
+import com.example.employee.dto.TerminateEmployeeRequestDto;
 import com.example.employee.entity.Employee;
+import com.example.employee.entity.EmploymentStatus;
+import com.example.employee.entity.Role;
 import com.example.employee.exception.DuplicateEmailException;
 import com.example.employee.exception.EmployeeNotFoundException;
 import com.example.employee.repository.EmployeeRepository;
+import com.example.employee.repository.UserRepository;
 import com.example.employee.service.EmployeeService;
+import com.example.employee.validation.EmployeeValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,21 +25,32 @@ import java.util.stream.Collectors;
 public class EmployeeServiceImpl implements EmployeeService {
 
     private final EmployeeRepository employeeRepository;
+    private final EmployeeValidator employeeValidator;
+    private final UserRepository userRepository;
 
     @Autowired
-    public EmployeeServiceImpl(EmployeeRepository employeeRepository) {
+    public EmployeeServiceImpl(EmployeeRepository employeeRepository,
+                               EmployeeValidator employeeValidator,
+                               UserRepository userRepository) {
         this.employeeRepository = employeeRepository;
+        this.employeeValidator = employeeValidator;
+        this.userRepository = userRepository;
     }
 
     @Override
     public EmployeeResponseDto createEmployee(EmployeeRequestDto dto) {
-        // Business Rule: Check for unique email
-        if (employeeRepository.existsByEmail(dto.getEmail())) {
-            throw new DuplicateEmailException("An employee with email '" + dto.getEmail() + "' already exists.");
+        // Step 1: Validate business constraints and dates
+        employeeValidator.validate(dto);
+
+        // Step 2: Check for unique email
+        String normalizedEmail = dto.getEmail().trim().toLowerCase();
+        if (employeeRepository.existsByEmail(normalizedEmail)) {
+            throw new DuplicateEmailException("An employee with email '" + dto.getEmail().trim() + "' already exists.");
         }
 
         Employee employee = new Employee();
         mapDtoToEntity(dto, employee);
+        employee.setStatus(EmploymentStatus.ACTIVE);
 
         Employee saved = employeeRepository.save(employee);
         return EmployeeResponseDto.fromEntity(saved);
@@ -60,14 +77,69 @@ public class EmployeeServiceImpl implements EmployeeService {
         Employee employee = employeeRepository.findById(id)
                 .orElseThrow(() -> new EmployeeNotFoundException(id));
 
-        // Business Rule: Ensure updated email doesn't conflict with another employee
-        if (employeeRepository.existsByEmailAndIdNot(dto.getEmail(), id)) {
-            throw new DuplicateEmailException("Another employee with email '" + dto.getEmail() + "' already exists.");
+        // Step 1: Validate business constraints and dates
+        employeeValidator.validate(dto);
+
+        // Step 2: Ensure updated email doesn't conflict with another employee
+        String normalizedEmail = dto.getEmail().trim().toLowerCase();
+        if (employeeRepository.existsByEmailAndIdNot(normalizedEmail, id)) {
+            throw new DuplicateEmailException("Another employee with email '" + dto.getEmail().trim() + "' already exists.");
         }
 
+        // Step 3: Update editable employee fields while preserving status and termination fields
         mapDtoToEntity(dto, employee);
+        // Ordinary employee-edit operations cannot change employment status or termination details
+
         Employee updated = employeeRepository.save(employee);
         return EmployeeResponseDto.fromEntity(updated);
+    }
+
+    @Override
+    public EmployeeResponseDto terminateEmployee(Long id, TerminateEmployeeRequestDto dto) {
+        Employee employee = employeeRepository.findById(id)
+                .orElseThrow(() -> new EmployeeNotFoundException(id));
+
+        // Business Rule: Cannot terminate already terminated employee
+        if (employee.getStatus() == EmploymentStatus.TERMINATED) {
+            throw new IllegalStateException("Employee with ID " + id + " (" + employee.getFirstName() + " " +
+                    employee.getLastName() + ") is already terminated.");
+        }
+
+        if (dto.getEffectiveDate() == null) {
+            throw new IllegalArgumentException("Termination effective date is required.");
+        }
+
+        if (dto.getReason() == null || dto.getReason().trim().isEmpty()) {
+            throw new IllegalArgumentException("Termination reason is required.");
+        }
+
+        // Business Rule: Termination date cannot be before joining date
+        if (dto.getEffectiveDate().isBefore(employee.getJoiningDate())) {
+            throw new IllegalArgumentException("Termination effective date (" + dto.getEffectiveDate() +
+                    ") cannot be before the employee's joining date (" + employee.getJoiningDate() + ").");
+        }
+
+        employee.setStatus(EmploymentStatus.TERMINATED);
+        employee.setTerminationDate(dto.getEffectiveDate());
+        employee.setTerminationReason(dto.getReason().trim());
+
+        Employee saved = employeeRepository.save(employee);
+
+        // Terminated account security: Disable any associated user account for this employee
+        userRepository.findByEmployeeId(id).ifPresent(user -> {
+            user.setEnabled(false);
+            userRepository.save(user);
+        });
+
+        // Also check if any EMPLOYEE role account is linked via matching email
+        userRepository.findByEmail(saved.getEmail()).ifPresent(user -> {
+            if (user.getRole() == Role.EMPLOYEE) {
+                user.setEnabled(false);
+                userRepository.save(user);
+            }
+        });
+
+        return EmployeeResponseDto.fromEntity(saved);
     }
 
     @Override
@@ -106,7 +178,11 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (status == null || status.equalsIgnoreCase("ALL") || status.trim().isEmpty()) {
             return getAllEmployees();
         }
-        return employeeRepository.findByStatusIgnoreCase(status.trim()).stream()
+        EmploymentStatus empStatus = parseEmploymentStatus(status);
+        if (empStatus == null) {
+            return Collections.emptyList();
+        }
+        return employeeRepository.findByStatus(empStatus).stream()
                 .map(EmployeeResponseDto::fromEntity)
                 .collect(Collectors.toList());
     }
@@ -119,11 +195,21 @@ public class EmployeeServiceImpl implements EmployeeService {
 
         List<Employee> result;
         if (hasDept && hasStatus) {
-            result = employeeRepository.findByDepartmentIgnoreCaseAndStatusIgnoreCase(department.trim(), status.trim());
+            EmploymentStatus empStatus = parseEmploymentStatus(status);
+            if (empStatus != null) {
+                result = employeeRepository.findByDepartmentIgnoreCaseAndStatus(department.trim(), empStatus);
+            } else {
+                result = Collections.emptyList();
+            }
         } else if (hasDept) {
             result = employeeRepository.findByDepartmentIgnoreCase(department.trim());
         } else if (hasStatus) {
-            result = employeeRepository.findByStatusIgnoreCase(status.trim());
+            EmploymentStatus empStatus = parseEmploymentStatus(status);
+            if (empStatus != null) {
+                result = employeeRepository.findByStatus(empStatus);
+            } else {
+                result = Collections.emptyList();
+            }
         } else {
             result = employeeRepository.findAll();
         }
@@ -133,18 +219,29 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .collect(Collectors.toList());
     }
 
+    private EmploymentStatus parseEmploymentStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return null;
+        }
+        try {
+            return EmploymentStatus.valueOf(status.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private void mapDtoToEntity(EmployeeRequestDto dto, Employee employee) {
         employee.setFirstName(dto.getFirstName().trim());
         employee.setLastName(dto.getLastName().trim());
         employee.setEmail(dto.getEmail().trim().toLowerCase());
         employee.setPhone(dto.getPhone() != null ? dto.getPhone().trim() : null);
         employee.setDateOfBirth(dto.getDateOfBirth());
-        employee.setGender(dto.getGender());
+        employee.setGender(dto.getGender() != null ? dto.getGender().trim() : null);
         employee.setDepartment(dto.getDepartment().trim());
         employee.setDesignation(dto.getDesignation() != null ? dto.getDesignation().trim() : null);
         employee.setSalary(dto.getSalary());
         employee.setJoiningDate(dto.getJoiningDate());
         employee.setAddress(dto.getAddress() != null ? dto.getAddress().trim() : null);
-        employee.setStatus(dto.getStatus() != null ? dto.getStatus().trim() : "Active");
+        // Note: Employment status and termination details are not changed by ordinary create/update mapping
     }
 }

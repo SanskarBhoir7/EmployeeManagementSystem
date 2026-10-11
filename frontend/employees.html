@@ -126,8 +126,9 @@
                         <div class="d-flex align-items-center gap-2">
                             <label class="form-label mb-0 text-nowrap small text-muted">Status:</label>
                             <select id="statusFilter" class="form-select form-select-sm">
-                                <option value="ALL">All</option>
+                                <option value="ALL">All Statuses</option>
                                 <option value="Active">Active</option>
+                                <option value="Terminated">Terminated</option>
                                 <option value="Inactive">Inactive</option>
                             </select>
                         </div>
@@ -231,10 +232,53 @@
                             <span class="text-muted small d-block mb-1">Address</span>
                             <span class="fw-semibold small text-secondary" id="viewModalAddress">--</span>
                         </div>
+                        <div class="list-group-item py-2 d-none" id="viewModalTerminationSection">
+                            <span class="text-danger small d-block mb-1 fw-semibold"><i class="bi bi-person-x me-1"></i>Termination Details</span>
+                            <div class="small text-danger" id="viewModalTerminationInfo">--</div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminate Confirmation Modal -->
+    <div class="modal fade" id="terminateConfirmModal" tabindex="-1" aria-labelledby="terminateModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-danger-subtle">
+                    <h5 class="modal-title fw-bold text-danger" id="terminateModalLabel">
+                        <i class="bi bi-person-x-fill me-2"></i>Terminate Employee
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div id="terminateAlert" class="alert d-none py-2 px-3 small" role="alert"></div>
+                    <p class="text-secondary small mb-3">
+                        Are you sure you want to terminate <strong id="terminateEmployeeName">this employee</strong>?
+                        This will transition their status to <strong class="text-danger">TERMINATED</strong> and deactivate linked user accounts.
+                    </p>
+                    <form id="terminateEmployeeForm" novalidate>
+                        <div class="mb-3">
+                            <label for="terminateEffectiveDate" class="form-label small fw-semibold">Effective Date <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" id="terminateEffectiveDate" required>
+                            <div class="invalid-feedback">Effective date cannot be before joining date.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="terminateReason" class="form-label small fw-semibold">Termination Reason <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="terminateReason" rows="3" placeholder="Provide reason for termination..." required minlength="3" maxlength="500"></textarea>
+                            <div class="invalid-feedback">Please enter a reason between 3 and 500 characters.</div>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2 mt-4">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" id="confirmTerminateBtn" class="btn btn-danger btn-sm px-3">
+                                <i class="bi bi-person-x me-1"></i> Confirm Termination
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>

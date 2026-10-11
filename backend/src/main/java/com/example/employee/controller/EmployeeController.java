@@ -3,6 +3,7 @@ package com.example.employee.controller;
 import com.example.employee.dto.ApiResponse;
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
+import com.example.employee.dto.TerminateEmployeeRequestDto;
 import com.example.employee.service.EmployeeService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,6 +83,19 @@ public class EmployeeController {
     }
 
     /**
+     * Terminate an active employee (ADMIN and HR only - EMPLOYEE forbidden)
+     * POST /api/employees/{id}/terminate
+     */
+    @PostMapping("/{id}/terminate")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HR')")
+    public ResponseEntity<EmployeeResponseDto> terminateEmployee(
+            @PathVariable Long id,
+            @Valid @RequestBody TerminateEmployeeRequestDto dto) {
+        EmployeeResponseDto terminated = employeeService.terminateEmployee(id, dto);
+        return ResponseEntity.ok(terminated);
+    }
+
+    /**
      * Delete an employee (Strictly restricted to ADMIN - HR is blocked)
      * DELETE /api/employees/{id}
      */
@@ -140,11 +154,13 @@ public class EmployeeController {
         List<EmployeeResponseDto> all = employeeService.getAllEmployees();
         long total = all.size();
         long active = all.stream().filter(e -> "Active".equalsIgnoreCase(e.getStatus())).count();
-        long inactive = total - active;
+        long terminated = all.stream().filter(e -> "Terminated".equalsIgnoreCase(e.getStatus())).count();
+        long inactive = all.stream().filter(e -> "Inactive".equalsIgnoreCase(e.getStatus())).count();
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("total", total);
         stats.put("active", active);
+        stats.put("terminated", terminated);
         stats.put("inactive", inactive);
         return ResponseEntity.ok(stats);
     }

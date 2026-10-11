@@ -31,6 +31,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final EmployeeValidator employeeValidator;
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
+    private com.example.employee.service.AuditService auditService;
 
     @Autowired
     public EmployeeServiceImpl(EmployeeRepository employeeRepository,
@@ -41,6 +42,22 @@ public class EmployeeServiceImpl implements EmployeeService {
         this.employeeValidator = employeeValidator;
         this.userRepository = userRepository;
         this.departmentRepository = departmentRepository;
+    }
+
+    @Autowired(required = false)
+    public void setAuditService(com.example.employee.service.AuditService auditService) {
+        this.auditService = auditService;
+    }
+
+    private void recordAudit(com.example.employee.entity.AuditAction action, Long id, String details) {
+        if (auditService != null) {
+            String actor = "SYSTEM";
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
+                actor = auth.getName();
+            }
+            auditService.log(actor, action, "EMPLOYEE", id, details);
+        }
     }
 
     @Override
@@ -59,6 +76,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setStatus(EmploymentStatus.ACTIVE);
 
         Employee saved = employeeRepository.save(employee);
+        recordAudit(com.example.employee.entity.AuditAction.EMPLOYEE_CREATED, saved.getId(),
+                "Created employee record for " + saved.getFirstName() + " " + saved.getLastName() + " (" + saved.getEmail() + ")");
         return EmployeeResponseDto.fromEntity(saved);
     }
 
@@ -97,6 +116,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         // Ordinary employee-edit operations cannot change employment status or termination details
 
         Employee updated = employeeRepository.save(employee);
+        recordAudit(com.example.employee.entity.AuditAction.EMPLOYEE_UPDATED, updated.getId(),
+                "Updated employee record for " + updated.getFirstName() + " " + updated.getLastName() + " (" + updated.getEmail() + ")");
         return EmployeeResponseDto.fromEntity(updated);
     }
 
@@ -145,6 +166,10 @@ public class EmployeeServiceImpl implements EmployeeService {
             }
         });
 
+        recordAudit(com.example.employee.entity.AuditAction.EMPLOYEE_TERMINATED, saved.getId(),
+                "Terminated employee " + saved.getFirstName() + " " + saved.getLastName() +
+                ". Effective: " + dto.getEffectiveDate() + ". Reason: " + dto.getReason().trim());
+
         return EmployeeResponseDto.fromEntity(saved);
     }
 
@@ -154,6 +179,8 @@ public class EmployeeServiceImpl implements EmployeeService {
             throw new EmployeeNotFoundException(id);
         }
         employeeRepository.deleteById(id);
+        recordAudit(com.example.employee.entity.AuditAction.EMPLOYEE_DELETED, id,
+                "Deleted employee record #" + id);
     }
 
     @Override

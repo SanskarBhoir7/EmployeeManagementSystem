@@ -21,6 +21,10 @@ const LEAVE_API_BASE = (window.location.port === '8081' || window.location.port 
     ? `${window.location.origin}/api/leaves`
     : 'http://localhost:8081/api/leaves';
 
+const AUDIT_API_BASE = (window.location.port === '8081' || window.location.port === '8080')
+    ? `${window.location.origin}/api/audit-logs`
+    : 'http://localhost:8081/api/audit-logs';
+
 // Authentication State Helpers
 function getAuthToken() {
     return localStorage.getItem('ems_auth_token');
@@ -111,6 +115,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (document.getElementById('myLeavesTable')) {
         initLeavesPage();
+    }
+
+    if (document.getElementById('auditLogsTable')) {
+        if (currentRole !== 'ADMIN') {
+            showToast('Access Denied: Only administrators can access system audit logs.', 'warning');
+            setTimeout(() => window.location.href = 'index.html', 1200);
+            return;
+        }
+        initAuditLogsPage();
     }
 
     if (currentRole === 'EMPLOYEE') {
@@ -1998,4 +2011,183 @@ async function confirmCancelLeave() {
         showToast(err.message, 'danger');
     }
 }
+
+/* ==========================================================================
+   Phase 4: System Audit Trail Frontend Logic (ADMIN Only)
+   ========================================================================== */
+
+let allAuditLogsList = [];
+
+async function initAuditLogsPage() {
+    await loadAuditLogs();
+}
+
+async function loadAuditLogs() {
+    const tbody = document.getElementById('auditLogsTableBody');
+    if (!tbody) return;
+
+    try {
+        const res = await fetchWithAuth(AUDIT_API_BASE);
+        if (res.status === 403) {
+            showToast('Access Denied: Only administrators can view system audit logs.', 'danger');
+            setTimeout(() => window.location.href = 'index.html', 1500);
+            return;
+        }
+
+        if (!res.ok) {
+            throw new Error('Failed to load audit logs.');
+        }
+
+        allAuditLogsList = await res.json();
+        renderAuditLogsTable(allAuditLogsList);
+        updateAuditLogStats(allAuditLogsList);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger"><i class="bi bi-exclamation-triangle me-1"></i> ${err.message}</td></tr>`;
+    }
+}
+
+function renderAuditLogsTable(logs) {
+    const tbody = document.getElementById('auditLogsTableBody');
+    if (!tbody) return;
+
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-5 text-muted">
+            <i class="bi bi-journal-x fs-2 d-block mb-2 text-secondary"></i>
+            No audit records matching the specified criteria.
+        </td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = logs.map(log => {
+        const actionBadge = getAuditActionBadge(log.action);
+        const entityBadge = getAuditEntityBadge(log.entityType);
+        const formattedTime = formatAuditTimestamp(log.timestamp);
+
+        return `
+            <tr>
+                <td class="ps-3 fw-bold text-muted">#${log.id}</td>
+                <td>
+                    <div class="small fw-semibold text-dark">${formattedTime.date}</div>
+                    <div class="small text-muted">${formattedTime.time}</div>
+                </td>
+                <td>
+                    <span class="badge bg-light text-dark border"><i class="bi bi-person-fill text-secondary me-1"></i>${escapeHtml(log.actor || 'SYSTEM')}</span>
+                </td>
+                <td>${actionBadge}</td>
+                <td>${entityBadge}</td>
+                <td class="text-muted fw-semibold">${log.entityId ? `#${log.entityId}` : '-'}</td>
+                <td><span class="small font-monospace text-wrap">${escapeHtml(log.details || '')}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterAuditLogs() {
+    const entityFilter = document.getElementById('auditEntityFilter');
+    const actionFilter = document.getElementById('auditActionFilter');
+    const searchInput = document.getElementById('auditSearchInput');
+
+    const entity = entityFilter ? entityFilter.value : '';
+    const action = actionFilter ? actionFilter.value : '';
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+    let filtered = allAuditLogsList;
+
+    if (entity) {
+        filtered = filtered.filter(l => l.entityType === entity);
+    }
+
+    if (action) {
+        filtered = filtered.filter(l => l.action === action);
+    }
+
+    if (query) {
+        filtered = filtered.filter(l => {
+            const actor = (l.actor || '').toLowerCase();
+            const details = (l.details || '').toLowerCase();
+            const id = String(l.id || '');
+            const entityId = String(l.entityId || '');
+            return actor.includes(query) || details.includes(query) || id.includes(query) || entityId.includes(query);
+        });
+    }
+
+    renderAuditLogsTable(filtered);
+}
+
+function resetAuditFilters() {
+    const entityFilter = document.getElementById('auditEntityFilter');
+    const actionFilter = document.getElementById('auditActionFilter');
+    const searchInput = document.getElementById('auditSearchInput');
+
+    if (entityFilter) entityFilter.value = '';
+    if (actionFilter) actionFilter.value = '';
+    if (searchInput) searchInput.value = '';
+
+    renderAuditLogsTable(allAuditLogsList);
+}
+
+function updateAuditLogStats(logs) {
+    const totalEl = document.getElementById('statAuditTotal');
+    const empEl = document.getElementById('statAuditEmployee');
+    const deptEl = document.getElementById('statAuditDepartment');
+    const leaveEl = document.getElementById('statAuditLeave');
+
+    if (!totalEl) return;
+
+    totalEl.textContent = logs.length;
+    if (empEl) empEl.textContent = logs.filter(l => l.entityType === 'EMPLOYEE').length;
+    if (deptEl) deptEl.textContent = logs.filter(l => l.entityType === 'DEPARTMENT').length;
+    if (leaveEl) leaveEl.textContent = logs.filter(l => l.entityType === 'LEAVE').length;
+}
+
+function getAuditActionBadge(action) {
+    if (!action) return '<span class="badge bg-secondary">UNKNOWN</span>';
+
+    if (action.includes('CREATED')) {
+        return `<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-plus-circle me-1"></i>${action}</span>`;
+    }
+    if (action.includes('UPDATED')) {
+        return `<span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="bi bi-pencil me-1"></i>${action}</span>`;
+    }
+    if (action.includes('TERMINATED') || action.includes('DELETED')) {
+        return `<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-trash me-1"></i>${action}</span>`;
+    }
+    if (action === 'LEAVE_APPROVED') {
+        return `<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check-circle me-1"></i>${action}</span>`;
+    }
+    if (action === 'LEAVE_REJECTED') {
+        return `<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-x-circle me-1"></i>${action}</span>`;
+    }
+    if (action === 'LEAVE_CANCELLED') {
+        return `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle"><i class="bi bi-slash-circle me-1"></i>${action}</span>`;
+    }
+    if (action === 'LEAVE_SUBMITTED') {
+        return `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-clock me-1"></i>${action}</span>`;
+    }
+
+    return `<span class="badge bg-secondary">${action}</span>`;
+}
+
+function getAuditEntityBadge(entityType) {
+    switch (entityType) {
+        case 'EMPLOYEE':
+            return '<span class="badge bg-info text-dark">Employee</span>';
+        case 'DEPARTMENT':
+            return '<span class="badge bg-primary">Department</span>';
+        case 'LEAVE':
+            return '<span class="badge bg-warning text-dark">Leave</span>';
+        default:
+            return `<span class="badge bg-light text-dark">${escapeHtml(entityType || 'SYSTEM')}</span>`;
+    }
+}
+
+function formatAuditTimestamp(isoString) {
+    if (!isoString) return { date: 'N/A', time: '' };
+    const d = new Date(isoString);
+    return {
+        date: d.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }),
+        time: d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+    };
+}
+
 

@@ -36,6 +36,7 @@ public class LeaveServiceImpl implements LeaveService {
     private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeeRepository employeeRepository;
     private final UserRepository userRepository;
+    private com.example.employee.service.AuditService auditService;
 
     @Autowired
     public LeaveServiceImpl(LeaveRequestRepository leaveRequestRepository,
@@ -44,6 +45,17 @@ public class LeaveServiceImpl implements LeaveService {
         this.leaveRequestRepository = leaveRequestRepository;
         this.employeeRepository = employeeRepository;
         this.userRepository = userRepository;
+    }
+
+    @Autowired(required = false)
+    public void setAuditService(com.example.employee.service.AuditService auditService) {
+        this.auditService = auditService;
+    }
+
+    private void recordAudit(String actor, com.example.employee.entity.AuditAction action, Long id, String details) {
+        if (auditService != null) {
+            auditService.log(actor, action, "LEAVE", id, details);
+        }
     }
 
     @Override
@@ -125,6 +137,9 @@ public class LeaveServiceImpl implements LeaveService {
         leaveRequest.setStatus(LeaveStatus.PENDING);
 
         LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
+        recordAudit(authenticatedUsername, com.example.employee.entity.AuditAction.LEAVE_SUBMITTED, saved.getId(),
+                "Submitted " + saved.getLeaveType() + " leave request for " + employee.getFirstName() + " " + employee.getLastName() +
+                " from " + saved.getStartDate() + " to " + saved.getEndDate());
         return LeaveResponseDto.fromEntity(saved);
     }
 
@@ -199,6 +214,12 @@ public class LeaveServiceImpl implements LeaveService {
         leave.setReviewComments(reviewDto.getReviewComments() != null ? reviewDto.getReviewComments().trim() : null);
 
         LeaveRequest updated = leaveRequestRepository.save(leave);
+        com.example.employee.entity.AuditAction auditAction = (reviewDto.getStatus() == LeaveStatus.APPROVED)
+                ? com.example.employee.entity.AuditAction.LEAVE_APPROVED
+                : com.example.employee.entity.AuditAction.LEAVE_REJECTED;
+        recordAudit(reviewerUsername, auditAction, updated.getId(),
+                "Leave request #" + updated.getId() + " " + reviewDto.getStatus() + " by " + reviewerUsername +
+                (reviewDto.getReviewComments() != null ? ". Comments: " + reviewDto.getReviewComments() : ""));
         return LeaveResponseDto.fromEntity(updated);
     }
 
@@ -223,6 +244,8 @@ public class LeaveServiceImpl implements LeaveService {
 
         leave.setStatus(LeaveStatus.CANCELLED);
         LeaveRequest updated = leaveRequestRepository.save(leave);
+        recordAudit(authenticatedUsername, com.example.employee.entity.AuditAction.LEAVE_CANCELLED, updated.getId(),
+                "Cancelled leave request #" + updated.getId() + " by " + authenticatedUsername);
         return LeaveResponseDto.fromEntity(updated);
     }
 

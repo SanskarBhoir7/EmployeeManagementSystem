@@ -22,12 +22,29 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     private final DepartmentRepository departmentRepository;
     private final EmployeeRepository employeeRepository;
+    private com.example.employee.service.AuditService auditService;
 
     @Autowired
     public DepartmentServiceImpl(DepartmentRepository departmentRepository,
                                   EmployeeRepository employeeRepository) {
         this.departmentRepository = departmentRepository;
         this.employeeRepository = employeeRepository;
+    }
+
+    @Autowired(required = false)
+    public void setAuditService(com.example.employee.service.AuditService auditService) {
+        this.auditService = auditService;
+    }
+
+    private void recordAudit(com.example.employee.entity.AuditAction action, Long id, String details) {
+        if (auditService != null) {
+            String actor = "SYSTEM";
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
+                actor = auth.getName();
+            }
+            auditService.log(actor, action, "DEPARTMENT", id, details);
+        }
     }
 
     @Override
@@ -66,6 +83,8 @@ public class DepartmentServiceImpl implements DepartmentService {
         department.setDescription(dto.getDescription() != null ? dto.getDescription().trim() : null);
 
         Department saved = departmentRepository.save(department);
+        recordAudit(com.example.employee.entity.AuditAction.DEPARTMENT_CREATED, saved.getId(),
+                "Created department '" + saved.getName() + "'");
         return DepartmentResponseDto.fromEntity(saved, 0L);
     }
 
@@ -88,6 +107,8 @@ public class DepartmentServiceImpl implements DepartmentService {
 
         Department updated = departmentRepository.save(dept);
         long count = employeeRepository.countByDepartmentId(updated.getId());
+        recordAudit(com.example.employee.entity.AuditAction.DEPARTMENT_UPDATED, updated.getId(),
+                "Updated department '" + updated.getName() + "'");
         return DepartmentResponseDto.fromEntity(updated, count);
     }
 
@@ -103,5 +124,7 @@ public class DepartmentServiceImpl implements DepartmentService {
         }
 
         departmentRepository.delete(dept);
+        recordAudit(com.example.employee.entity.AuditAction.DEPARTMENT_DELETED, id,
+                "Deleted department '" + dept.getName() + "'");
     }
 }

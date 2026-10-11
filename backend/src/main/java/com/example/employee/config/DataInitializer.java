@@ -1,11 +1,15 @@
 package com.example.employee.config;
 
 import com.example.employee.entity.Employee;
+import com.example.employee.entity.Role;
+import com.example.employee.entity.User;
 import com.example.employee.repository.EmployeeRepository;
+import com.example.employee.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -18,17 +22,23 @@ public class DataInitializer implements CommandLineRunner {
 
     private static final Logger logger = LoggerFactory.getLogger(DataInitializer.class);
 
-    private final EmployeeRepository repository;
+    private final EmployeeRepository employeeRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
-    public DataInitializer(EmployeeRepository repository) {
-        this.repository = repository;
+    public DataInitializer(EmployeeRepository employeeRepository,
+                           UserRepository userRepository,
+                           PasswordEncoder passwordEncoder) {
+        this.employeeRepository = employeeRepository;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public void run(String... args) {
         try {
-            if (repository.count() == 0) {
+            if (employeeRepository.count() == 0) {
                 logger.info("Database is empty. Seeding initial sample employee records...");
                 List<Employee> sampleEmployees = Arrays.asList(
                     new Employee(null, "Rahul", "Sharma", "rahul.sharma@example.com", "+91 98765 43210",
@@ -72,8 +82,18 @@ public class DataInitializer implements CommandLineRunner {
                             new BigDecimal("55000.00"), LocalDate.of(2022, 10, 1), "18 Sector 14, Gurugram", "Active")
                 );
 
-                repository.saveAll(sampleEmployees);
+                employeeRepository.saveAll(sampleEmployees);
                 logger.info("Successfully seeded {} sample employees into MySQL employee_db.", sampleEmployees.size());
+            }
+
+            if (userRepository.count() == 0) {
+                logger.info("Seeding initial user accounts with encrypted BCrypt passwords...");
+                User admin = new User(null, "admin", passwordEncoder.encode("Admin@123"), "admin@ems.local", Role.ADMIN, null, true);
+                User hr = new User(null, "hrmanager", passwordEncoder.encode("Hr@123"), "hr@ems.local", Role.HR, null, true);
+                User employee = new User(null, "rahul.s", passwordEncoder.encode("Emp@123"), "rahul.sharma@example.com", Role.EMPLOYEE, 1L, true);
+
+                userRepository.saveAll(Arrays.asList(admin, hr, employee));
+                logger.info("Successfully seeded 3 development accounts (ADMIN: admin, HR: hrmanager, EMPLOYEE: rahul.s linked to ID 1).");
             }
         } catch (Exception ex) {
             logger.warn("DataInitializer skipped or encountered an error: {}", ex.getMessage());

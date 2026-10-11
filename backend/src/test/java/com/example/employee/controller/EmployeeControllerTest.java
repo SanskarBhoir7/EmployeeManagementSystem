@@ -3,8 +3,10 @@ package com.example.employee.controller;
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
 import com.example.employee.entity.Employee;
+import com.example.employee.entity.Role;
 import com.example.employee.exception.DuplicateEmailException;
 import com.example.employee.exception.EmployeeNotFoundException;
+import com.example.employee.security.*;
 import com.example.employee.service.EmployeeService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,7 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -23,10 +27,12 @@ import java.util.Arrays;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(EmployeeController.class)
+@Import({SecurityConfig.class, JwtAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class})
 class EmployeeControllerTest {
 
     @Autowired
@@ -34,6 +40,12 @@ class EmployeeControllerTest {
 
     @MockBean
     private EmployeeService employeeService;
+
+    @MockBean
+    private JwtTokenProvider jwtTokenProvider;
+
+    @MockBean
+    private CustomUserDetailsService customUserDetailsService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -53,8 +65,13 @@ class EmployeeControllerTest {
                 new BigDecimal("85000.00"), LocalDate.of(2021, 6, 1), "Pune", "Active");
     }
 
+    // ==========================================
+    // 9 Original Verified Tests (with ADMIN role)
+    // ==========================================
+
     @Test
-    @DisplayName("POST /api/employees - Should create employee and return 201")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees - Should create employee and return 201 for ADMIN")
     void testCreateEmployee() throws Exception {
         when(employeeService.createEmployee(any(EmployeeRequestDto.class))).thenReturn(sampleResponseDto);
 
@@ -67,7 +84,8 @@ class EmployeeControllerTest {
     }
 
     @Test
-    @DisplayName("POST /api/employees - Should return 400 when validation fails (e.g. blank firstName)")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /api/employees - Should return 400 when validation fails")
     void testCreateEmployeeValidationFailure() throws Exception {
         sampleRequestDto.setFirstName(""); // invalid
 
@@ -79,6 +97,7 @@ class EmployeeControllerTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
     @DisplayName("POST /api/employees - Should return 409 when duplicate email exists")
     void testCreateEmployeeDuplicateEmail() throws Exception {
         when(employeeService.createEmployee(any(EmployeeRequestDto.class)))
@@ -92,7 +111,8 @@ class EmployeeControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/employees - Should return 200 with list")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /api/employees - Should return 200 with list for ADMIN")
     void testGetAllEmployees() throws Exception {
         when(employeeService.getAllEmployees()).thenReturn(Arrays.asList(sampleResponseDto));
 
@@ -102,7 +122,8 @@ class EmployeeControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/employees/{id} - Should return 200 when exists")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /api/employees/{id} - Should return 200 when exists for ADMIN")
     void testGetEmployeeByIdSuccess() throws Exception {
         when(employeeService.getEmployeeById(1L)).thenReturn(sampleResponseDto);
 
@@ -112,6 +133,7 @@ class EmployeeControllerTest {
     }
 
     @Test
+    @WithMockUser(roles = "ADMIN")
     @DisplayName("GET /api/employees/{id} - Should return 404 when not found")
     void testGetEmployeeByIdNotFound() throws Exception {
         when(employeeService.getEmployeeById(999L)).thenThrow(new EmployeeNotFoundException(999L));
@@ -122,7 +144,8 @@ class EmployeeControllerTest {
     }
 
     @Test
-    @DisplayName("PUT /api/employees/{id} - Should return 200 on update")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("PUT /api/employees/{id} - Should return 200 on update for ADMIN")
     void testUpdateEmployee() throws Exception {
         when(employeeService.updateEmployee(eq(1L), any(EmployeeRequestDto.class))).thenReturn(sampleResponseDto);
 
@@ -134,7 +157,8 @@ class EmployeeControllerTest {
     }
 
     @Test
-    @DisplayName("DELETE /api/employees/{id} - Should return 200 on delete")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("DELETE /api/employees/{id} - Should return 200 on delete for ADMIN")
     void testDeleteEmployee() throws Exception {
         doNothing().when(employeeService).deleteEmployee(1L);
 
@@ -144,7 +168,8 @@ class EmployeeControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/employees/search?name=Rahul - Should return search results")
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /api/employees/search?name=Rahul - Should return search results for ADMIN")
     void testSearchEmployees() throws Exception {
         when(employeeService.searchEmployees("Rahul")).thenReturn(Arrays.asList(sampleResponseDto));
 
@@ -152,4 +177,93 @@ class EmployeeControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].firstName").value("Rahul"));
     }
+
+    // =======================================================
+    // New Security & RBAC Access Control Tests
+    // =======================================================
+
+    @Test
+    @DisplayName("Anonymous Request: GET /api/employees - Should reject with 401 or 403 when unauthenticated")
+    void testGetAllEmployeesUnauthenticated() throws Exception {
+        mockMvc.perform(get("/api/employees"))
+                .andExpect(result -> {
+                    int status = result.getResponse().getStatus();
+                    org.junit.jupiter.api.Assertions.assertTrue(status == 401 || status == 403);
+                });
+    }
+
+    @Test
+    @WithMockUser(roles = "HR")
+    @DisplayName("RBAC: DELETE /api/employees/{id} - Should return 403 Forbidden for HR role")
+    void testDeleteEmployeeForbiddenForHR() throws Exception {
+        mockMvc.perform(delete("/api/employees/1"))
+                .andExpect(status().isForbidden());
+        verify(employeeService, never()).deleteEmployee(anyLong());
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    @DisplayName("RBAC: GET /api/employees - Should return 403 Forbidden for EMPLOYEE role")
+    void testGetAllEmployeesForbiddenForEmployee() throws Exception {
+        mockMvc.perform(get("/api/employees"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    @DisplayName("RBAC: DELETE /api/employees/1 - Should return 403 Forbidden for EMPLOYEE role")
+    void testDeleteEmployeeForbiddenForEmployee() throws Exception {
+        mockMvc.perform(delete("/api/employees/1"))
+                .andExpect(status().isForbidden());
+        verify(employeeService, never()).deleteEmployee(anyLong());
+    }
+
+    @Test
+    @DisplayName("RBAC: GET /api/employees/1 - Should permit EMPLOYEE when viewing their own linked profile (ID 1)")
+    void testGetOwnEmployeeProfileAllowedForEmployee() throws Exception {
+        UserPrincipal principal = new UserPrincipal(3L, "rahul.s", "pass", "rahul.s@ems.local", Role.EMPLOYEE, 1L, true);
+        when(employeeService.getEmployeeById(1L)).thenReturn(sampleResponseDto);
+
+        mockMvc.perform(get("/api/employees/1").with(user(principal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1L));
+    }
+
+    @Test
+    @DisplayName("RBAC: GET /api/employees/2 - Should return 403 Forbidden for EMPLOYEE trying to view another profile")
+    void testGetOtherEmployeeProfileForbiddenForEmployee() throws Exception {
+        UserPrincipal principal = new UserPrincipal(3L, "rahul.s", "pass", "rahul.s@ems.local", Role.EMPLOYEE, 1L, true);
+
+        mockMvc.perform(get("/api/employees/2").with(user(principal)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    @DisplayName("RBAC: POST /api/employees - Should return 403 Forbidden for EMPLOYEE role")
+    void testCreateEmployeeForbiddenForEmployee() throws Exception {
+        mockMvc.perform(post("/api/employees")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(sampleRequestDto)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    @DisplayName("RBAC: PUT /api/employees/1 - Should return 403 Forbidden for EMPLOYEE role")
+    void testUpdateEmployeeForbiddenForEmployee() throws Exception {
+        mockMvc.perform(put("/api/employees/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(sampleRequestDto)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Auth: DELETE /api/employees/1 - Should return 401 Unauthorized for unauthenticated request")
+    void testDeleteEmployeeUnauthenticated() throws Exception {
+        mockMvc.perform(delete("/api/employees/1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
 }
+

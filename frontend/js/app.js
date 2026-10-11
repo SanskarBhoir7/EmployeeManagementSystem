@@ -1,66 +1,209 @@
 /**
- * Employee Database - Employee Management System
+ * Employee Database - Employee Management System (EMS Pro)
  * Frontend Application Logic (Vanilla JS + Bootstrap 5)
+ * Security Foundation & JWT Authentication Integration
  */
 
-// Base API URL configuration:
-// Automatically uses current host:port if served by Spring Boot, or points to port 8081 if served statically
+// Base API URLs
 const API_BASE_URL = (window.location.port === '8081' || window.location.port === '8080')
     ? `${window.location.origin}/api/employees`
     : 'http://localhost:8081/api/employees';
 
-// Global state
-let currentEmployees = [];
-let currentRole = localStorage.getItem('ems_role') || 'ADMIN'; // 'ADMIN' or 'HR'
-let activeDeleteId = null;
+const AUTH_API_BASE = (window.location.port === '8081' || window.location.port === '8080')
+    ? `${window.location.origin}/api/auth`
+    : 'http://localhost:8081/api/auth';
 
-// Initialize on DOM Load
-document.addEventListener('DOMContentLoaded', () => {
-    initRole();
-    initEventListeners();
+// Authentication State Helpers
+function getAuthToken() {
+    return localStorage.getItem('ems_auth_token');
+}
 
-    // Check if on dashboard / list page or add-edit page
-    if (document.getElementById('employeeTableBody')) {
-        loadEmployees();
-        loadStats();
+function getCurrentUser() {
+    const raw = localStorage.getItem('ems_user');
+    try {
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function isAuthenticated() {
+    return !!getAuthToken();
+}
+
+function logout() {
+    localStorage.removeItem('ems_auth_token');
+    localStorage.removeItem('ems_user');
+    localStorage.removeItem('ems_role');
+    window.location.href = 'login.html?logout=true';
+}
+
+/**
+ * Fetch wrapper automatically attaching JWT Bearer Authorization header
+ * and handling 401 Unauthorized token expiry
+ */
+async function fetchWithAuth(url, options = {}) {
+    const token = getAuthToken();
+    if (!token) {
+        window.location.href = 'login.html';
+        return null;
     }
 
-    if (document.getElementById('employeeForm')) {
-        initFormPage();
+    options.headers = options.headers || {};
+    if (!(options.body instanceof FormData) && !options.headers['Content-Type'] && options.body) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+    options.headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+        const response = await fetch(url, options);
+
+        if (response.status === 401) {
+            localStorage.removeItem('ems_auth_token');
+            localStorage.removeItem('ems_user');
+            localStorage.removeItem('ems_role');
+            window.location.href = 'login.html?session_expired=true';
+            return response;
+        }
+
+        return response;
+    } catch (err) {
+        console.error('Fetch error:', err);
+        throw err;
+    }
+}
+
+// Global Application State
+let currentEmployees = [];
+let currentRole = 'ADMIN';
+let activeDeleteId = null;
+
+// Initialize on DOM Ready
+document.addEventListener('DOMContentLoaded', () => {
+    const isLoginPage = window.location.pathname.endsWith('login.html');
+    if (!isLoginPage && !isAuthenticated()) {
+        window.location.href = 'login.html';
+        return;
+    }
+
+    if (isLoginPage) return;
+
+    const user = getCurrentUser();
+    if (user) {
+        currentRole = user.role || 'ADMIN';
+    }
+
+    initAuthUI();
+    initEventListeners();
+    initChangePasswordModal();
+    initRegisterUserModal();
+
+    if (currentRole === 'EMPLOYEE') {
+        initEmployeeRoleView(user);
+    } else {
+        // ADMIN or HR
+        if (document.getElementById('employeeTableBody')) {
+            loadEmployees();
+            loadStats();
+        }
+        if (document.getElementById('employeeForm')) {
+            initFormPage();
+        }
     }
 });
 
 /**
- * Initializes and syncs current user role
+ * Sync navbar and interface elements with user authentication & role
  */
-function initRole() {
-    const roleSelect = document.getElementById('roleSelect');
-    if (roleSelect) {
-        roleSelect.value = currentRole;
-        roleSelect.addEventListener('change', (e) => {
-            currentRole = e.target.value;
-            localStorage.setItem('ems_role', currentRole);
-            updateRoleUI();
-            if (document.getElementById('employeeTableBody')) {
-                renderEmployeeTable(currentEmployees);
-            }
-            showToast(`Role switched to ${currentRole}`, 'info');
-        });
-    }
-    updateRoleUI();
-}
+function initAuthUI() {
+    const user = getCurrentUser();
+    if (!user) return;
 
-function updateRoleUI() {
+    const usernameDisplay = document.getElementById('currentUsernameDisplay');
+    if (usernameDisplay) {
+        usernameDisplay.textContent = user.username;
+    }
+
     const roleBadge = document.getElementById('currentRoleDisplay');
     if (roleBadge) {
-        roleBadge.textContent = currentRole;
+        roleBadge.textContent = user.role;
+        roleBadge.className = 'badge ms-1 ' + (
+            user.role === 'ADMIN' ? 'bg-danger' :
+            user.role === 'HR' ? 'bg-primary' : 'bg-success'
+        );
     }
 
-    // Hide or disable Add Employee button for roles without add permission if ever needed
-    const addBtns = document.querySelectorAll('.admin-hr-only');
-    addBtns.forEach(btn => {
-        btn.style.display = (currentRole === 'ADMIN' || currentRole === 'HR') ? 'inline-flex' : 'none';
-    });
+    // Role-specific action buttons and modals
+    if (user.role === 'ADMIN') {
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('d-none'));
+    }
+
+    if (user.role === 'EMPLOYEE') {
+        document.querySelectorAll('.admin-hr-only').forEach(el => el.classList.add('d-none'));
+        document.querySelectorAll('.nav-admin-hr').forEach(el => el.classList.add('d-none'));
+    }
+}
+
+/**
+ * Handle Employee role access restrictions and self-service profile view
+ */
+async function initEmployeeRoleView(user) {
+    // If an employee navigated directly to add/edit form, block access
+    if (document.getElementById('employeeForm')) {
+        showToast('Access Denied: Employees cannot create or edit personnel records.', 'warning');
+        setTimeout(() => {
+            window.location.href = 'profile.html';
+        }, 1200);
+        return;
+    }
+
+    // Show Employee Role notice & details container on dashboard or directory
+    const empContainer = document.getElementById('employeeRoleViewContainer');
+    if (empContainer) {
+        empContainer.classList.remove('d-none');
+    }
+
+    const empSpinner = document.getElementById('empRoleSpinner');
+    const empDetails = document.getElementById('empRoleDetails');
+
+    if (user && user.employeeId) {
+        try {
+            const res = await fetchWithAuth(`${API_BASE_URL}/${user.employeeId}`);
+            if (!res.ok) throw new Error('Could not load profile');
+            const emp = await res.json();
+
+            if (empSpinner) empSpinner.classList.add('d-none');
+            if (empDetails) empDetails.classList.remove('d-none');
+
+            const nameEl = document.getElementById('empRoleName');
+            const desigEl = document.getElementById('empRoleDesignation');
+            const avatarEl = document.getElementById('empRoleAvatar');
+            const idEl = document.getElementById('empRoleId');
+            const emailEl = document.getElementById('empRoleEmail');
+            const phoneEl = document.getElementById('empRolePhone');
+            const deptEl = document.getElementById('empRoleDept');
+            const joinEl = document.getElementById('empRoleJoin');
+            const salaryEl = document.getElementById('empRoleSalary');
+            const statusBadge = document.getElementById('empRoleStatusBadge');
+
+            if (nameEl) nameEl.textContent = emp.fullName || `${emp.firstName} ${emp.lastName}`;
+            if (desigEl) desigEl.textContent = emp.designation || 'N/A';
+            if (avatarEl) avatarEl.textContent = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase();
+            if (idEl) idEl.textContent = `#${emp.id}`;
+            if (emailEl) emailEl.textContent = emp.email || 'N/A';
+            if (phoneEl) phoneEl.textContent = emp.phone || 'N/A';
+            if (deptEl) deptEl.textContent = emp.department || 'N/A';
+            if (joinEl) joinEl.textContent = emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
+            if (salaryEl) salaryEl.textContent = emp.salary ? `₹${parseFloat(emp.salary).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
+            if (statusBadge) statusBadge.textContent = emp.status || 'Active';
+
+        } catch (err) {
+            if (empSpinner) empSpinner.classList.add('d-none');
+            showToast('Unable to load employee profile details.', 'danger');
+        }
+    } else {
+        if (empSpinner) empSpinner.classList.add('d-none');
+    }
 }
 
 /**
@@ -74,7 +217,6 @@ function initEventListeners() {
     const resetBtn = document.getElementById('resetFiltersBtn');
 
     if (searchInput) {
-        // Instant search with debounce
         let debounceTimer;
         searchInput.addEventListener('input', () => {
             clearTimeout(debounceTimer);
@@ -108,7 +250,6 @@ function initEventListeners() {
         });
     }
 
-    // Delete modal confirmation button
     const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
     if (confirmDeleteBtn) {
         confirmDeleteBtn.addEventListener('click', handleConfirmDelete);
@@ -120,8 +261,8 @@ function initEventListeners() {
  */
 async function loadStats() {
     try {
-        const response = await fetch(`${API_BASE_URL}/stats`);
-        if (!response.ok) throw new Error('Failed to fetch stats');
+        const response = await fetchWithAuth(`${API_BASE_URL}/stats`);
+        if (!response || !response.ok) return;
         const stats = await response.json();
 
         const totalEl = document.getElementById('statTotal');
@@ -132,25 +273,32 @@ async function loadStats() {
         if (activeEl) activeEl.textContent = stats.active || 0;
         if (inactiveEl) inactiveEl.textContent = stats.inactive || 0;
     } catch (err) {
-        console.warn('Could not load server stats, falling back to local calculation:', err);
+        console.warn('Could not load server stats:', err);
     }
 }
 
 /**
- * Fetch all employees from backend API
+ * Fetch all employees from backend API (ADMIN & HR)
  */
 async function loadEmployees() {
     showLoading(true);
     try {
-        const response = await fetch(API_BASE_URL);
+        const response = await fetchWithAuth(API_BASE_URL);
+        if (!response) return;
+
+        if (response.status === 403) {
+            showToast('Access Denied: You do not have permission to view the employee directory.', 'danger');
+            renderEmptyState('Access restricted to HR and ADMIN.');
+            return;
+        }
+
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const employees = await response.json();
         currentEmployees = employees;
         renderEmployeeTable(employees);
-        updateLocalStats(employees);
     } catch (error) {
         console.error('Error loading employees:', error);
-        showToast('Unable to connect to Spring Boot backend API. Ensure server is running on port 8081.', 'danger');
+        showToast('Unable to connect to backend API.', 'danger');
         renderEmptyState('Failed to load employee records from server.');
     } finally {
         showLoading(false);
@@ -169,22 +317,19 @@ async function applyFilters() {
     try {
         let url = API_BASE_URL;
 
-        // If only search term is used
         if (searchVal && (deptVal === 'ALL' || !deptVal) && (statusVal === 'ALL' || !statusVal)) {
             url = `${API_BASE_URL}/search?name=${encodeURIComponent(searchVal)}`;
         } else {
-            // Use combined query parameters supported by backend GET /api/employees
             const params = new URLSearchParams();
             if (deptVal && deptVal !== 'ALL') params.append('department', deptVal);
             if (statusVal && statusVal !== 'ALL') params.append('status', statusVal);
             url = `${API_BASE_URL}?${params.toString()}`;
         }
 
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Failed to filter employees');
+        const res = await fetchWithAuth(url);
+        if (!res || !res.ok) throw new Error('Failed to filter employees');
         let data = await res.json();
 
-        // If search term was provided along with department/status filters, filter in-memory
         if (searchVal && (deptVal !== 'ALL' || statusVal !== 'ALL')) {
             const query = searchVal.toLowerCase();
             data = data.filter(e =>
@@ -206,7 +351,7 @@ async function applyFilters() {
 }
 
 /**
- * Render Employee Table
+ * Render Employee Table with role-aware action buttons
  */
 function renderEmployeeTable(employees) {
     const tbody = document.getElementById('employeeTableBody');
@@ -228,12 +373,12 @@ function renderEmployeeTable(employees) {
         const formattedSalary = emp.salary ? `₹${parseFloat(emp.salary).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         const formattedDate = emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
 
-        // Delete button is restricted based on role (Section 15: ADMIN can delete; HR cannot delete)
+        // Delete button restricted to ADMIN (HR cannot delete)
         const deleteButtonHtml = (currentRole === 'ADMIN')
             ? `<button class="btn btn-sm btn-outline-danger btn-action" onclick="openDeleteModal(${emp.id}, '${escapeQuotes(emp.fullName || emp.firstName)}')" title="Delete Employee">
                  <i class="bi bi-trash"></i>
                </button>`
-            : `<button class="btn btn-sm btn-outline-secondary btn-action" disabled title="Delete restricted to ADMIN">
+            : `<button class="btn btn-sm btn-outline-secondary btn-action" disabled title="Delete restricted to ADMIN (HTTP 403)">
                  <i class="bi bi-lock-fill"></i>
                </button>`;
 
@@ -249,21 +394,19 @@ function renderEmployeeTable(employees) {
                         </div>
                     </div>
                 </td>
-                <td><span class="badge-department">${escapeHtml(emp.department || 'N/A')}</span></td>
-                <td>
-                    <div class="fw-medium">${escapeHtml(emp.designation || 'N/A')}</div>
-                    <div class="text-muted small">${formattedSalary}</div>
-                </td>
-                <td><span class="badge badge-status ${statusClass}">${escapeHtml(emp.status || 'Active')}</span></td>
-                <td class="text-muted small">${formattedDate}</td>
-                <td>
-                    <div class="d-flex gap-1">
-                        <button class="btn btn-sm btn-outline-info btn-action" onclick="viewEmployeeDetails(${emp.id})" title="View Profile">
+                <td><span class="badge bg-light text-dark border">${escapeHtml(emp.department)}</span></td>
+                <td class="text-secondary small fw-medium">${escapeHtml(emp.designation || 'N/A')}</td>
+                <td><span class="badge-status ${statusClass}">${escapeHtml(emp.status)}</span></td>
+                <td class="text-secondary small">${formattedDate}</td>
+                <td class="fw-semibold text-dark">${formattedSalary}</td>
+                <td class="text-center">
+                    <div class="d-inline-flex gap-1">
+                        <button class="btn btn-sm btn-outline-info btn-action" onclick="viewEmployeeDetails(${emp.id})" title="View Details">
                             <i class="bi bi-eye"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-primary btn-action" onclick="openEditEmployee(${emp.id})" title="Edit Employee">
+                        <a href="add-employee.html?id=${emp.id}" class="btn btn-sm btn-outline-primary btn-action" title="Edit Employee">
                             <i class="bi bi-pencil"></i>
-                        </button>
+                        </a>
                         ${deleteButtonHtml}
                     </div>
                 </td>
@@ -277,107 +420,94 @@ function renderEmptyState(message) {
     if (!tbody) return;
     tbody.innerHTML = `
         <tr>
-            <td colspan="7">
-                <div class="empty-state">
-                    <div class="empty-state-icon"><i class="bi bi-people"></i></div>
-                    <h5 class="text-secondary mb-1">No Records Found</h5>
-                    <p class="text-muted small mb-3">${message}</p>
-                    <button class="btn btn-sm btn-outline-primary" onclick="resetAllFilters()">Reset Filters</button>
-                </div>
+            <td colspan="8" class="text-center py-5">
+                <i class="bi bi-inbox text-muted" style="font-size: 2.5rem;"></i>
+                <p class="text-muted mt-2 mb-0">${escapeHtml(message)}</p>
             </td>
         </tr>
     `;
 }
 
-function resetAllFilters() {
-    const searchInput = document.getElementById('searchInput');
-    const deptFilter = document.getElementById('departmentFilter');
-    const statusFilter = document.getElementById('statusFilter');
-    if (searchInput) searchInput.value = '';
-    if (deptFilter) deptFilter.value = 'ALL';
-    if (statusFilter) statusFilter.value = 'ALL';
-    loadEmployees();
-}
-
-function updateLocalStats(employees) {
-    const totalEl = document.getElementById('statTotal');
-    const activeEl = document.getElementById('statActive');
-    const inactiveEl = document.getElementById('statInactive');
-    const deptEl = document.getElementById('statDept');
-
-    if (totalEl) totalEl.textContent = employees.length;
-    if (activeEl) activeEl.textContent = employees.filter(e => e.status?.toLowerCase() === 'active').length;
-    if (inactiveEl) inactiveEl.textContent = employees.filter(e => e.status?.toLowerCase() === 'inactive').length;
-    if (deptEl) {
-        const uniqueDepts = new Set(employees.map(e => e.department).filter(Boolean));
-        deptEl.textContent = uniqueDepts.size;
-    }
-}
-
 /**
- * View Employee Details in Modal
+ * View Employee Details Modal
  */
 async function viewEmployeeDetails(id) {
     try {
-        const response = await fetch(`${API_BASE_URL}/${id}`);
-        if (!response.ok) throw new Error('Employee not found');
+        const response = await fetchWithAuth(`${API_BASE_URL}/${id}`);
+        if (!response || !response.ok) throw new Error('Employee record could not be retrieved');
         const emp = await response.json();
 
-        document.getElementById('viewModalName').textContent = emp.fullName || `${emp.firstName} ${emp.lastName}`;
+        document.getElementById('viewModalId').textContent = `#${emp.id}`;
+        document.getElementById('viewModalFullName').textContent = emp.fullName || `${emp.firstName} ${emp.lastName}`;
         document.getElementById('viewModalEmail').textContent = emp.email || 'N/A';
         document.getElementById('viewModalPhone').textContent = emp.phone || 'N/A';
+        document.getElementById('viewModalDepartment').textContent = emp.department || 'N/A';
+        document.getElementById('viewModalDesignation').textContent = emp.designation || 'N/A';
+        document.getElementById('viewModalSalary').textContent = emp.salary ? `₹${parseFloat(emp.salary).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A';
         document.getElementById('viewModalDob').textContent = emp.dateOfBirth || 'N/A';
         document.getElementById('viewModalGender').textContent = emp.gender || 'N/A';
-        document.getElementById('viewModalDept').textContent = emp.department || 'N/A';
-        document.getElementById('viewModalDesignation').textContent = emp.designation || 'N/A';
-        document.getElementById('viewModalSalary').textContent = emp.salary ? `₹${parseFloat(emp.salary).toLocaleString('en-IN')}` : 'N/A';
-        document.getElementById('viewModalJoiningDate').textContent = emp.joiningDate || 'N/A';
+        document.getElementById('viewModalJoiningDate').textContent = emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
         document.getElementById('viewModalAddress').textContent = emp.address || 'N/A';
-        document.getElementById('viewModalStatus').innerHTML = `<span class="badge badge-status ${emp.status?.toLowerCase() === 'active' ? 'badge-status-active' : 'badge-status-inactive'}">${emp.status}</span>`;
 
-        const viewModal = new bootstrap.Modal(document.getElementById('viewEmployeeModal'));
-        viewModal.show();
+        const statusBadge = document.getElementById('viewModalStatusBadge');
+        statusBadge.textContent = emp.status;
+        statusBadge.className = 'badge ' + (emp.status === 'Active' ? 'bg-success' : 'bg-secondary');
+
+        const initials = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase();
+        document.getElementById('viewModalAvatar').textContent = initials;
+
+        const modal = new bootstrap.Modal(document.getElementById('viewEmployeeModal'));
+        modal.show();
     } catch (err) {
-        showToast('Error fetching employee details', 'danger');
+        showToast(err.message, 'danger');
     }
 }
 
 /**
- * Delete Modal Flow
+ * Open Delete Modal
  */
 function openDeleteModal(id, name) {
     if (currentRole !== 'ADMIN') {
-        showToast('Delete permission is restricted to ADMIN role.', 'warning');
+        showToast('Access Denied: Only ADMIN can delete employees.', 'danger');
         return;
     }
     activeDeleteId = id;
-    document.getElementById('deleteEmployeeName').textContent = name;
-    const deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
-    deleteModal.show();
+    const nameEl = document.getElementById('deleteEmployeeName');
+    if (nameEl) nameEl.textContent = name || `#${id}`;
+
+    const modal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+    modal.show();
 }
 
+/**
+ * Confirm and execute Delete via DELETE /api/employees/{id}
+ */
 async function handleConfirmDelete() {
     if (!activeDeleteId) return;
 
     try {
-        const res = await fetch(`${API_BASE_URL}/${activeDeleteId}`, {
+        const response = await fetchWithAuth(`${API_BASE_URL}/${activeDeleteId}`, {
             method: 'DELETE'
         });
 
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.message || 'Delete operation failed');
+        if (!response) return;
+
+        if (response.status === 403) {
+            showToast('Access Denied: You do not have permission to delete employees (HTTP 403 Forbidden)', 'danger');
+            const modalEl = document.getElementById('deleteConfirmModal');
+            if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+            return;
         }
 
-        const data = await res.json();
-        showToast(data.message || 'Employee deleted successfully!', 'success');
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.message || 'Failed to delete employee record');
+        }
 
-        // Close modal
+        showToast('Employee record deleted successfully.', 'success');
         const modalEl = document.getElementById('deleteConfirmModal');
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
+        if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
 
-        activeDeleteId = null;
         loadEmployees();
         loadStats();
     } catch (err) {
@@ -386,17 +516,12 @@ async function handleConfirmDelete() {
 }
 
 /**
- * Navigation to Edit
- */
-function openEditEmployee(id) {
-    window.location.href = `add-employee.html?id=${id}`;
-}
-
-/**
- * Dedicated Add / Edit Page Logic
+ * Add / Edit Form Logic
  */
 async function initFormPage() {
     const form = document.getElementById('employeeForm');
+    if (!form) return;
+
     const urlParams = new URLSearchParams(window.location.search);
     const employeeId = urlParams.get('id');
 
@@ -404,12 +529,10 @@ async function initFormPage() {
     const submitBtn = document.getElementById('submitBtn');
 
     if (employeeId) {
-        // Edit Mode
         if (formTitle) formTitle.textContent = 'Edit Employee Profile';
         if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Update Employee';
         await loadEmployeeDataForEdit(employeeId);
     } else {
-        // Add Mode
         if (formTitle) formTitle.textContent = 'Add New Employee';
         if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-person-plus me-1"></i> Save Employee';
     }
@@ -419,8 +542,8 @@ async function initFormPage() {
 
 async function loadEmployeeDataForEdit(id) {
     try {
-        const res = await fetch(`${API_BASE_URL}/${id}`);
-        if (!res.ok) throw new Error('Employee not found');
+        const res = await fetchWithAuth(`${API_BASE_URL}/${id}`);
+        if (!res || !res.ok) throw new Error('Employee not found or access denied');
         const emp = await res.json();
 
         document.getElementById('employeeId').value = emp.id;
@@ -437,7 +560,7 @@ async function loadEmployeeDataForEdit(id) {
         document.getElementById('address').value = emp.address || '';
         document.getElementById('status').value = emp.status || 'Active';
     } catch (err) {
-        showToast('Error loading employee profile for editing', 'danger');
+        showToast('Error loading employee profile for editing: ' + err.message, 'danger');
     }
 }
 
@@ -445,7 +568,6 @@ async function handleFormSubmit(e, employeeId) {
     e.preventDefault();
     clearFormErrors();
 
-    // Client-side validation
     const payload = {
         firstName: document.getElementById('firstName').value.trim(),
         lastName: document.getElementById('lastName').value.trim(),
@@ -462,39 +584,16 @@ async function handleFormSubmit(e, employeeId) {
     };
 
     let isValid = true;
-
-    if (!payload.firstName) {
-        showFieldError('firstName', 'First name is required');
-        isValid = false;
-    }
-    if (!payload.lastName) {
-        showFieldError('lastName', 'Last name is required');
-        isValid = false;
-    }
-    if (!payload.email || !validateEmail(payload.email)) {
-        showFieldError('email', 'A valid email address is required');
-        isValid = false;
-    }
-    if (!payload.department) {
-        showFieldError('department', 'Department is required');
-        isValid = false;
-    }
-    if (isNaN(payload.salary) || payload.salary <= 0) {
-        showFieldError('salary', 'Salary must be a positive number');
-        isValid = false;
-    }
-    if (!payload.joiningDate) {
-        showFieldError('joiningDate', 'Joining date is required');
-        isValid = false;
-    }
-    if (!payload.status) {
-        showFieldError('status', 'Status is required');
-        isValid = false;
-    }
+    if (!payload.firstName) { showFieldError('firstName', 'First name is required'); isValid = false; }
+    if (!payload.lastName) { showFieldError('lastName', 'Last name is required'); isValid = false; }
+    if (!payload.email || !validateEmail(payload.email)) { showFieldError('email', 'A valid email address is required'); isValid = false; }
+    if (!payload.department) { showFieldError('department', 'Department is required'); isValid = false; }
+    if (isNaN(payload.salary) || payload.salary <= 0) { showFieldError('salary', 'Salary must be a positive number'); isValid = false; }
+    if (!payload.joiningDate) { showFieldError('joiningDate', 'Joining date is required'); isValid = false; }
+    if (!payload.status) { showFieldError('status', 'Status is required'); isValid = false; }
 
     if (!isValid) return;
 
-    // Send API Request
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
@@ -504,11 +603,19 @@ async function handleFormSubmit(e, employeeId) {
         const url = isEdit ? `${API_BASE_URL}/${employeeId}` : API_BASE_URL;
         const method = isEdit ? 'PUT' : 'POST';
 
-        const response = await fetch(url, {
+        const response = await fetchWithAuth(url, {
             method: method,
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
+
+        if (!response) return;
+
+        if (response.status === 403) {
+            showToast('Access Denied: You do not have permission to modify employee profiles (HTTP 403 Forbidden)', 'danger');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = employeeId ? '<i class="bi bi-check-circle me-1"></i> Update Employee' : '<i class="bi bi-person-plus me-1"></i> Save Employee';
+            return;
+        }
 
         const resData = await response.json();
 
@@ -528,8 +635,6 @@ async function handleFormSubmit(e, employeeId) {
         }
 
         showToast(isEdit ? 'Employee profile updated successfully!' : 'New employee created successfully!', 'success');
-
-        // Redirect back to dashboard after brief delay
         setTimeout(() => {
             window.location.href = 'index.html';
         }, 1200);
@@ -539,6 +644,144 @@ async function handleFormSubmit(e, employeeId) {
         submitBtn.disabled = false;
         submitBtn.innerHTML = employeeId ? '<i class="bi bi-check-circle me-1"></i> Update Employee' : '<i class="bi bi-person-plus me-1"></i> Save Employee';
     }
+}
+
+/**
+ * Change Password Modal Handler (Authenticated User)
+ */
+function initChangePasswordModal() {
+    const form = document.getElementById('changePasswordForm');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const currentPassword = document.getElementById('currentPasswordInput')?.value;
+        const newPassword = document.getElementById('newPasswordInput')?.value;
+        const confirmPassword = document.getElementById('confirmPasswordInput')?.value;
+        const alertBox = document.getElementById('changePasswordAlert');
+
+        if (!currentPassword || !newPassword) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = 'Please provide both current and new password.';
+                alertBox.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = 'New password must be at least 6 characters long.';
+                alertBox.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = 'New password and confirmation do not match.';
+                alertBox.classList.remove('d-none');
+            }
+            return;
+        }
+
+        const submitBtn = document.getElementById('submitChangePasswordBtn');
+        submitBtn.disabled = true;
+
+        try {
+            const res = await fetchWithAuth(`${AUTH_API_BASE}/change-password`, {
+                method: 'PUT',
+                body: JSON.stringify({ currentPassword, newPassword })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to change password');
+            }
+
+            if (alertBox) {
+                alertBox.className = 'alert alert-success py-2 px-3 small';
+                alertBox.textContent = 'Password updated successfully!';
+                alertBox.classList.remove('d-none');
+            }
+            showToast('Password updated successfully!', 'success');
+
+            setTimeout(() => {
+                const modalEl = document.getElementById('changePasswordModal');
+                if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+                form.reset();
+                if (alertBox) alertBox.classList.add('d-none');
+                submitBtn.disabled = false;
+            }, 1000);
+
+        } catch (err) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = err.message;
+                alertBox.classList.remove('d-none');
+            }
+            submitBtn.disabled = false;
+        }
+    });
+}
+
+/**
+ * Register User Modal Handler (ADMIN only)
+ */
+function initRegisterUserModal() {
+    const form = document.getElementById('registerUserForm');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('regUsernameInput')?.value.trim();
+        const email = document.getElementById('regEmailInput')?.value.trim();
+        const password = document.getElementById('regPasswordInput')?.value;
+        const role = document.getElementById('regRoleSelect')?.value;
+        const employeeIdVal = document.getElementById('regEmployeeIdInput')?.value.trim();
+        const employeeId = employeeIdVal ? parseInt(employeeIdVal, 10) : null;
+        const alertBox = document.getElementById('registerUserAlert');
+
+        const submitBtn = document.getElementById('submitRegisterUserBtn');
+        submitBtn.disabled = true;
+
+        try {
+            const res = await fetchWithAuth(`${AUTH_API_BASE}/register`, {
+                method: 'POST',
+                body: JSON.stringify({ username, email, password, role, employeeId })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to register user');
+            }
+
+            if (alertBox) {
+                alertBox.className = 'alert alert-success py-2 px-3 small';
+                alertBox.textContent = `User '${data.username}' registered successfully!`;
+                alertBox.classList.remove('d-none');
+            }
+            showToast(`User ${data.username} registered with role ${data.role}!`, 'success');
+
+            setTimeout(() => {
+                const modalEl = document.getElementById('registerUserModal');
+                if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+                form.reset();
+                if (alertBox) alertBox.classList.add('d-none');
+                submitBtn.disabled = false;
+            }, 1200);
+
+        } catch (err) {
+            if (alertBox) {
+                alertBox.className = 'alert alert-danger py-2 px-3 small';
+                alertBox.textContent = err.message;
+                alertBox.classList.remove('d-none');
+            }
+            submitBtn.disabled = false;
+        }
+    });
 }
 
 function showFieldError(fieldId, msg) {
@@ -561,9 +804,6 @@ function validateEmail(email) {
     return re.test(email);
 }
 
-/**
- * Toast helper
- */
 function showToast(message, type = 'success') {
     let container = document.getElementById('toastContainer');
     if (!container) {
@@ -621,9 +861,6 @@ function escapeQuotes(str) {
     return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
-/**
- * Export current employee list to CSV
- */
 function exportToCSV() {
     if (!currentEmployees || currentEmployees.length === 0) {
         showToast('No employee data available to export.', 'warning');

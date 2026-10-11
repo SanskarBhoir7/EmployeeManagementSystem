@@ -42,9 +42,9 @@ public class LeaveController {
 
     /**
      * Get authenticated user's own leave requests
-     * GET /api/leaves/my
+     * GET /api/leaves/my or /api/leaves/my-leaves
      */
-    @GetMapping("/my")
+    @GetMapping({"/my", "/my-leaves"})
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<LeaveResponseDto>> getMyLeaves(@AuthenticationPrincipal UserDetails userDetails) {
         List<LeaveResponseDto> myLeaves = leaveService.getMyLeaves(userDetails.getUsername());

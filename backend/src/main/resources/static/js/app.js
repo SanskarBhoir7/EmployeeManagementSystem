@@ -389,7 +389,7 @@ async function loadDashboardRecentLeaves() {
         const user = getCurrentUser();
         const url = (user && (user.role === 'ADMIN' || user.role === 'HR'))
             ? LEAVE_API_BASE
-            : `${LEAVE_API_BASE}/my-leaves`;
+            : `${LEAVE_API_BASE}/my`;
         const res = await fetchWithAuth(url);
         if (!res || !res.ok) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">Leave records unavailable or restricted.</td></tr>';
@@ -1815,9 +1815,14 @@ async function loadMyLeaves() {
     if (!tbody) return;
 
     try {
-        const res = await fetchWithAuth(`${LEAVE_API_BASE}/my-leaves`);
+        const res = await fetchWithAuth(`${LEAVE_API_BASE}/my`);
         if (!res.ok) {
-            throw new Error('Failed to load leave requests.');
+            let errorMsg = 'Failed to load leave requests.';
+            try {
+                const errData = await res.json();
+                if (errData.message) errorMsg = errData.message;
+            } catch (_) {}
+            throw new Error(errorMsg);
         }
         myLeavesList = await res.json();
         renderMyLeavesTable(myLeavesList);
@@ -1883,7 +1888,12 @@ async function loadAllLeaves() {
     try {
         const res = await fetchWithAuth(url);
         if (!res.ok) {
-            throw new Error('Failed to load leave approval requests.');
+            let errorMsg = 'Failed to load leave approval requests.';
+            try {
+                const errData = await res.json();
+                if (errData.message) errorMsg = errData.message;
+            } catch (_) {}
+            throw new Error(errorMsg);
         }
         allLeavesList = await res.json();
         renderAllLeavesTable(allLeavesList);

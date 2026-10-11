@@ -175,4 +175,16 @@ class LeaveControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
     }
+
+    @Test
+    @WithMockUser(username = "rahul.s", roles = "EMPLOYEE")
+    @DisplayName("GET /api/leaves/my-leaves - Employee should view their own leave requests via alias endpoint (200)")
+    void testGetMyLeavesAlias() throws Exception {
+        when(leaveService.getMyLeaves("rahul.s")).thenReturn(List.of(sampleLeaveResponse));
+
+        mockMvc.perform(get("/api/leaves/my-leaves"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].id").value(1L));
+    }
 }

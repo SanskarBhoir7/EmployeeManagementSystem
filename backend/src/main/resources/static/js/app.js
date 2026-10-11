@@ -51,7 +51,43 @@ function logout() {
 }
 
 /**
+ * Format a date string (YYYY-MM-DD or ISO timestamp) into a clean, human-friendly date
+ * Example: '2026-10-12' -> 'Oct 12, 2026'
+ */
+function formatDate(dateStr) {
+    if (!dateStr) return '—';
+    try {
+        const str = String(dateStr).trim();
+        const cleanDate = str.includes('T') ? str.split('T')[0] : str.split(' ')[0];
+        const parts = cleanDate.split('-');
+        if (parts.length === 3) {
+            const year = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10) - 1;
+            const day = parseInt(parts[2], 10);
+            const d = new Date(year, month, day);
+            if (!isNaN(d.getTime())) {
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+        }
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return String(dateStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (e) {
+        return String(dateStr);
+    }
+}
+
+/**
+ * Cleanly truncate long text strings with ellipsis
+ */
+function truncate(str, maxLen = 30) {
+    if (!str) return '';
+    return str.length > maxLen ? str.substring(0, maxLen) + '...' : str;
+}
+
+/**
  * Fetch wrapper automatically attaching JWT Bearer Authorization header
+
  * and handling 401 Unauthorized token expiry
  */
 async function fetchWithAuth(url, options = {}) {
@@ -350,7 +386,11 @@ async function loadDashboardRecentLeaves() {
 
     try {
         if (spinner) spinner.classList.remove('d-none');
-        const res = await fetchWithAuth(LEAVE_API_BASE);
+        const user = getCurrentUser();
+        const url = (user && (user.role === 'ADMIN' || user.role === 'HR'))
+            ? LEAVE_API_BASE
+            : `${LEAVE_API_BASE}/my-leaves`;
+        const res = await fetchWithAuth(url);
         if (!res || !res.ok) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">Leave records unavailable or restricted.</td></tr>';
             return;

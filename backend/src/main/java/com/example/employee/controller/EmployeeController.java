@@ -21,10 +21,22 @@ import java.util.Map;
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private com.example.employee.repository.DepartmentRepository departmentRepository;
+    private com.example.employee.repository.LeaveRequestRepository leaveRequestRepository;
 
     @Autowired
     public EmployeeController(EmployeeService employeeService) {
         this.employeeService = employeeService;
+    }
+
+    @Autowired(required = false)
+    public void setDepartmentRepository(com.example.employee.repository.DepartmentRepository departmentRepository) {
+        this.departmentRepository = departmentRepository;
+    }
+
+    @Autowired(required = false)
+    public void setLeaveRequestRepository(com.example.employee.repository.LeaveRequestRepository leaveRequestRepository) {
+        this.leaveRequestRepository = leaveRequestRepository;
     }
 
     /**
@@ -162,6 +174,25 @@ public class EmployeeController {
         stats.put("active", active);
         stats.put("terminated", terminated);
         stats.put("inactive", inactive);
+
+        long departmentCount = (departmentRepository != null) ? departmentRepository.count() : 0L;
+        stats.put("departments", departmentCount);
+
+        long totalLeaves = 0L;
+        long pendingLeaves = 0L;
+        long approvedLeaves = 0L;
+        long rejectedLeaves = 0L;
+        if (leaveRequestRepository != null) {
+            totalLeaves = leaveRequestRepository.count();
+            pendingLeaves = leaveRequestRepository.countByStatus(com.example.employee.entity.LeaveStatus.PENDING);
+            approvedLeaves = leaveRequestRepository.countByStatus(com.example.employee.entity.LeaveStatus.APPROVED);
+            rejectedLeaves = leaveRequestRepository.countByStatus(com.example.employee.entity.LeaveStatus.REJECTED);
+        }
+        stats.put("totalLeaves", totalLeaves);
+        stats.put("pendingLeaves", pendingLeaves);
+        stats.put("approvedLeaves", approvedLeaves);
+        stats.put("rejectedLeaves", rejectedLeaves);
+
         return ResponseEntity.ok(stats);
     }
 }

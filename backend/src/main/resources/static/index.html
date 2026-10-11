@@ -114,7 +114,7 @@
                 <div class="stat-card">
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
-                            <div class="stat-title">Active Employees</div>
+                            <div class="stat-title">Active Personnel</div>
                             <div class="stat-value text-success" id="statActive">--</div>
                         </div>
                         <div class="stat-icon-wrapper stat-icon-success">
@@ -127,11 +127,11 @@
                 <div class="stat-card">
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
-                            <div class="stat-title">Inactive / On Leave</div>
-                            <div class="stat-value text-muted" id="statInactive">--</div>
+                            <div class="stat-title">Terminated Personnel</div>
+                            <div class="stat-value text-danger" id="statTerminated">--</div>
                         </div>
-                        <div class="stat-icon-wrapper stat-icon-warning">
-                            <i class="bi bi-person-dash"></i>
+                        <div class="stat-icon-wrapper stat-icon-danger">
+                            <i class="bi bi-person-x"></i>
                         </div>
                     </div>
                 </div>
@@ -140,14 +140,101 @@
                 <div class="stat-card">
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
-                            <div class="stat-title">Security Status</div>
-                            <div class="stat-value text-primary fs-5" id="securityBadge">JWT Active</div>
+                            <div class="stat-title">Departments</div>
+                            <div class="stat-value text-primary" id="statDepartments">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-primary">
+                            <i class="bi bi-building"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Total Leave Requests</div>
+                            <div class="stat-value text-secondary" id="statTotalLeaves">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-primary">
+                            <i class="bi bi-calendar2-range"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Pending Leave Approvals</div>
+                            <div class="stat-value text-warning" id="statPendingLeaves">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-warning">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Approved Leaves</div>
+                            <div class="stat-value text-success" id="statApprovedLeaves">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-success">
+                            <i class="bi bi-check2-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-3">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Security & Audit</div>
+                            <div class="stat-value text-primary fs-6" id="securityBadge">RBAC & Audited</div>
                         </div>
                         <div class="stat-icon-wrapper stat-icon-primary">
                             <i class="bi bi-shield-check"></i>
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Recent Leave Activity Summary Widget (Admin & HR) -->
+        <div class="main-card admin-hr-only mb-4" id="recentLeavesCard">
+            <div class="main-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-calendar-check me-2 text-primary"></i>Recent Leave Activity</h5>
+                    <span class="badge bg-warning text-dark" id="dashPendingLeaveCount">-- Pending</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <div class="spinner-border spinner-border-sm text-primary d-none" id="recentLeavesSpinner" role="status"></div>
+                    <a href="leaves.html" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-arrow-right-circle me-1"></i> Go to Leaves
+                    </a>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3" style="width: 70px;">ID</th>
+                            <th>Employee</th>
+                            <th>Type</th>
+                            <th>Dates</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dashRecentLeavesBody">
+                        <tr>
+                            <td colspan="6" class="text-center py-3 text-muted">Loading recent leave activity...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -253,13 +340,25 @@
                 <table class="table table-custom align-middle mb-0">
                     <thead>
                         <tr>
-                            <th scope="col" style="width: 70px;">ID</th>
-                            <th scope="col">Employee Name</th>
-                            <th scope="col">Department</th>
-                            <th scope="col">Designation</th>
+                            <th scope="col" style="width: 80px; cursor: pointer;" onclick="handleSortTable('id')" title="Click to sort by ID">
+                                ID <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-id"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('name')" title="Click to sort by Name">
+                                Employee Name <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-name"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('department')" title="Click to sort by Department">
+                                Department <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-department"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('designation')" title="Click to sort by Designation">
+                                Designation <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-designation"></i>
+                            </th>
                             <th scope="col">Status</th>
-                            <th scope="col">Joining Date</th>
-                            <th scope="col">Salary</th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('joiningDate')" title="Click to sort by Joining Date">
+                                Joining Date <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-joiningDate"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('salary')" title="Click to sort by Salary">
+                                Salary <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-salary"></i>
+                            </th>
                             <th scope="col" class="text-center" style="width: 140px;">Actions</th>
                         </tr>
                     </thead>
@@ -267,6 +366,16 @@
                         <!-- Populated dynamically via app.js -->
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Usability: Pagination & Row Counter Controls -->
+            <div class="card-footer bg-white d-flex flex-wrap align-items-center justify-content-between py-2 px-3 border-top" id="employeePaginationFooter">
+                <div class="small text-muted" id="paginationSummary">Showing 0 of 0 employees</div>
+                <nav aria-label="Employee directory page navigation">
+                    <ul class="pagination pagination-sm mb-0 gap-1" id="paginationControls">
+                        <!-- Rendered by app.js -->
+                    </ul>
+                </nav>
             </div>
         </div>
 

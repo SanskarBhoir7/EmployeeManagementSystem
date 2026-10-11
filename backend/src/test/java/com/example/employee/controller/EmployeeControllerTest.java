@@ -416,5 +416,24 @@ class EmployeeControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors").isArray());
     }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /api/employees/stats - Should return dashboard statistics successfully")
+    void testGetDashboardStats() throws Exception {
+        when(employeeService.getAllEmployees()).thenReturn(Arrays.asList(sampleResponseDto));
+
+        mockMvc.perform(get("/api/employees/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.active").value(1))
+                .andExpect(jsonPath("$.terminated").value(0))
+                .andExpect(jsonPath("$.departments").isNumber())
+                .andExpect(jsonPath("$.totalLeaves").isNumber())
+                .andExpect(jsonPath("$.pendingLeaves").isNumber())
+                .andExpect(jsonPath("$.approvedLeaves").isNumber())
+                .andExpect(jsonPath("$.rejectedLeaves").isNumber());
+    }
 }
+
 

@@ -167,13 +167,25 @@
                 <table class="table table-custom align-middle mb-0">
                     <thead>
                         <tr>
-                            <th scope="col" style="width: 70px;">ID</th>
-                            <th scope="col">Employee</th>
-                            <th scope="col">Department</th>
-                            <th scope="col">Designation</th>
+                            <th scope="col" style="width: 80px; cursor: pointer;" onclick="handleSortTable('id')" title="Click to sort by ID">
+                                ID <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-id"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('name')" title="Click to sort by Name">
+                                Employee <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-name"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('department')" title="Click to sort by Department">
+                                Department <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-department"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('designation')" title="Click to sort by Designation">
+                                Designation <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-designation"></i>
+                            </th>
                             <th scope="col">Status</th>
-                            <th scope="col">Joining Date</th>
-                            <th scope="col">Salary</th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('joiningDate')" title="Click to sort by Joining Date">
+                                Joining Date <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-joiningDate"></i>
+                            </th>
+                            <th scope="col" style="cursor: pointer;" onclick="handleSortTable('salary')" title="Click to sort by Salary">
+                                Salary <i class="bi bi-arrow-down-up small text-muted" id="sortIcon-salary"></i>
+                            </th>
                             <th scope="col" class="text-center" style="width: 140px;">Actions</th>
                         </tr>
                     </thead>
@@ -181,6 +193,16 @@
                         <!-- Populated by JavaScript -->
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Usability: Pagination & Row Counter Controls -->
+            <div class="card-footer bg-white d-flex flex-wrap align-items-center justify-content-between py-2 px-3 border-top" id="employeePaginationFooter">
+                <div class="small text-muted" id="paginationSummary">Showing 0 of 0 employees</div>
+                <nav aria-label="Employee directory page navigation">
+                    <ul class="pagination pagination-sm mb-0 gap-1" id="paginationControls">
+                        <!-- Rendered by app.js -->
+                    </ul>
+                </nav>
             </div>
         </div>
 

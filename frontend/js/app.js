@@ -145,6 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
             loadEmployees();
             loadStats();
         }
+        if (document.getElementById('dashRecentLeavesBody')) {
+            loadDashboardRecentLeaves();
+        }
         if (document.getElementById('employeeForm')) {
             initFormPage();
         }
@@ -305,7 +308,7 @@ function initEventListeners() {
 }
 
 /**
- * Load dashboard statistics
+ * Load dashboard statistics (Phase 5 Analytics & Metrics)
  */
 async function loadStats() {
     try {
@@ -316,14 +319,114 @@ async function loadStats() {
         const totalEl = document.getElementById('statTotal');
         const activeEl = document.getElementById('statActive');
         const inactiveEl = document.getElementById('statInactive');
+        const terminatedEl = document.getElementById('statTerminated');
+        const deptEl = document.getElementById('statDepartments');
+        const totalLeavesEl = document.getElementById('statTotalLeaves');
+        const pendingLeavesEl = document.getElementById('statPendingLeaves');
+        const approvedLeavesEl = document.getElementById('statApprovedLeaves');
 
         if (totalEl) totalEl.textContent = stats.total || 0;
         if (activeEl) activeEl.textContent = stats.active || 0;
+        if (terminatedEl) terminatedEl.textContent = stats.terminated || 0;
         if (inactiveEl) inactiveEl.textContent = stats.terminated ? `${stats.inactive || 0} (${stats.terminated} Terminated)` : (stats.inactive || 0);
+        if (deptEl) deptEl.textContent = stats.departments || 0;
+        if (totalLeavesEl) totalLeavesEl.textContent = stats.totalLeaves || 0;
+        if (pendingLeavesEl) pendingLeavesEl.textContent = stats.pendingLeaves || 0;
+        if (approvedLeavesEl) approvedLeavesEl.textContent = stats.approvedLeaves || 0;
     } catch (err) {
         console.warn('Could not load server stats:', err);
     }
 }
+
+/**
+ * Load Recent Leaves Summary on Dashboard (Phase 5 Dashboard Improvement)
+ */
+async function loadDashboardRecentLeaves() {
+    const tbody = document.getElementById('dashRecentLeavesBody');
+    if (!tbody) return;
+
+    const spinner = document.getElementById('recentLeavesSpinner');
+    const badge = document.getElementById('dashPendingLeaveCount');
+
+    try {
+        if (spinner) spinner.classList.remove('d-none');
+        const res = await fetchWithAuth(LEAVE_API_BASE);
+        if (!res || !res.ok) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">Leave records unavailable or restricted.</td></tr>';
+            return;
+        }
+
+        const leaves = await res.json();
+        const pendingCount = leaves.filter(l => l.status === 'PENDING').length;
+        if (badge) {
+            badge.textContent = `${pendingCount} Pending`;
+            badge.className = `badge ${pendingCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'}`;
+        }
+
+        const recent = leaves.slice(0, 5);
+        if (recent.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted"><i class="bi bi-inbox d-block mb-1 fs-4"></i>No leave requests recorded yet.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = recent.map(l => {
+            const statusBadge = getLeaveStatusBadge(l.status);
+            return `
+                <tr>
+                    <td class="ps-3 fw-bold text-muted">#${l.id}</td>
+                    <td>
+                        <span class="fw-semibold text-dark">${escapeHtml(l.employeeName || 'Unknown')}</span>
+                        <div class="small text-muted">${escapeHtml(l.departmentName || '')}</div>
+                    </td>
+                    <td><span class="badge bg-light text-dark border">${l.leaveType}</span></td>
+                    <td><span class="small">${formatDate(l.startDate)} to ${formatDate(l.endDate)}</span></td>
+                    <td><span class="small" title="${escapeHtml(l.reason || '')}">${escapeHtml(truncate(l.reason, 28))}</span></td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger"><i class="bi bi-exclamation-triangle me-1"></i> ${err.message}</td></tr>`;
+    } finally {
+        if (spinner) spinner.classList.add('d-none');
+    }
+}
+
+// Usability State: Sorting & Pagination
+let currentSortColumn = 'id';
+let currentSortAsc = true;
+let currentDirectoryPage = 1;
+const directoryPageSize = 10;
+
+function handleSortTable(columnKey) {
+    if (currentSortColumn === columnKey) {
+        currentSortAsc = !currentSortAsc;
+    } else {
+        currentSortColumn = columnKey;
+        currentSortAsc = true;
+    }
+    updateSortIcons();
+    currentDirectoryPage = 1;
+    renderEmployeeTable(currentEmployees);
+}
+
+function updateSortIcons() {
+    ['id', 'name', 'department', 'designation', 'joiningDate', 'salary'].forEach(col => {
+        const icon = document.getElementById(`sortIcon-${col}`);
+        if (!icon) return;
+        if (col === currentSortColumn) {
+            icon.className = currentSortAsc ? 'bi bi-arrow-up text-primary small' : 'bi bi-arrow-down text-primary small';
+        } else {
+            icon.className = 'bi bi-arrow-down-up small text-muted';
+        }
+    });
+}
+
+function changeDirectoryPage(page) {
+    currentDirectoryPage = page;
+    renderEmployeeTable(currentEmployees);
+}
+
 
 /**
  * Fetch all employees from backend API (ADMIN & HR)
@@ -399,23 +502,99 @@ async function applyFilters() {
 }
 
 /**
- * Render Employee Table with role-aware action buttons
+ * Render Employee Table with role-aware action buttons, sorting, and pagination
  */
 function renderEmployeeTable(employees) {
     const tbody = document.getElementById('employeeTableBody');
     const countDisplay = document.getElementById('tableCountDisplay');
+    const paginationFooter = document.getElementById('employeePaginationFooter');
+    const paginationControls = document.getElementById('paginationControls');
+    const paginationSummary = document.getElementById('paginationSummary');
     if (!tbody) return;
 
-    if (countDisplay) {
-        countDisplay.textContent = `Showing ${employees.length} employee${employees.length === 1 ? '' : 's'}`;
-    }
-
     if (!employees || employees.length === 0) {
+        if (countDisplay) countDisplay.textContent = 'Showing 0 employees';
+        if (paginationSummary) paginationSummary.textContent = 'No employees to display';
+        if (paginationControls) paginationControls.innerHTML = '';
         renderEmptyState('No employee records found matching your criteria.');
         return;
     }
 
-    tbody.innerHTML = employees.map(emp => {
+    // Usability: Sort dataset
+    const sorted = [...employees].sort((a, b) => {
+        let valA = a[currentSortColumn];
+        let valB = b[currentSortColumn];
+
+        if (currentSortColumn === 'name') {
+            valA = (a.fullName || `${a.firstName} ${a.lastName}`).toLowerCase();
+            valB = (b.fullName || `${b.firstName} ${b.lastName}`).toLowerCase();
+        } else if (currentSortColumn === 'salary') {
+            valA = parseFloat(a.salary || 0);
+            valB = parseFloat(b.salary || 0);
+        } else if (currentSortColumn === 'id') {
+            valA = a.id || 0;
+            valB = b.id || 0;
+        } else if (currentSortColumn === 'joiningDate') {
+            valA = a.joiningDate || '';
+            valB = b.joiningDate || '';
+        } else {
+            valA = (valA || '').toString().toLowerCase();
+            valB = (valB || '').toString().toLowerCase();
+        }
+
+        if (valA < valB) return currentSortAsc ? -1 : 1;
+        if (valA > valB) return currentSortAsc ? 1 : -1;
+        return 0;
+    });
+
+    const totalCount = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / directoryPageSize));
+    if (currentDirectoryPage > totalPages) currentDirectoryPage = totalPages;
+    if (currentDirectoryPage < 1) currentDirectoryPage = 1;
+
+    const startIdx = (currentDirectoryPage - 1) * directoryPageSize;
+    const endIdx = Math.min(startIdx + directoryPageSize, totalCount);
+    const pageRecords = sorted.slice(startIdx, endIdx);
+
+    if (countDisplay) {
+        countDisplay.textContent = `Showing ${pageRecords.length} of ${totalCount} employee${totalCount === 1 ? '' : 's'}`;
+    }
+
+    if (paginationSummary) {
+        paginationSummary.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalCount} employees (Page ${currentDirectoryPage} of ${totalPages})`;
+    }
+
+    // Render pagination buttons
+    if (paginationControls) {
+        let pagHtml = `
+            <li class="page-item ${currentDirectoryPage === 1 ? 'disabled' : ''}">
+                <button class="page-link" onclick="changeDirectoryPage(${currentDirectoryPage - 1})" aria-label="Previous">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+            </li>
+        `;
+        for (let p = 1; p <= totalPages; p++) {
+            if (p === 1 || p === totalPages || (p >= currentDirectoryPage - 1 && p <= currentDirectoryPage + 1)) {
+                pagHtml += `
+                    <li class="page-item ${p === currentDirectoryPage ? 'active' : ''}">
+                        <button class="page-link" onclick="changeDirectoryPage(${p})">${p}</button>
+                    </li>
+                `;
+            } else if (p === currentDirectoryPage - 2 || p === currentDirectoryPage + 2) {
+                pagHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+            }
+        }
+        pagHtml += `
+            <li class="page-item ${currentDirectoryPage === totalPages ? 'disabled' : ''}">
+                <button class="page-link" onclick="changeDirectoryPage(${currentDirectoryPage + 1})" aria-label="Next">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </li>
+        `;
+        paginationControls.innerHTML = pagHtml;
+    }
+
+    tbody.innerHTML = pageRecords.map(emp => {
         const initials = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase();
         const isTerminated = emp.status?.toUpperCase() === 'TERMINATED';
         const statusClass = emp.status?.toUpperCase() === 'ACTIVE'

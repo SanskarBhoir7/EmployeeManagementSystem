@@ -62,7 +62,7 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                     // Public static frontend assets and login page
-                    .requestMatchers("/", "/index.html", "/employees.html", "/add-employee.html", "/departments.html", "/login.html", "/favicon.ico").permitAll()
+                    .requestMatchers("/", "/index.html", "/employees.html", "/add-employee.html", "/departments.html", "/leaves.html", "/login.html", "/favicon.ico").permitAll()
                     .requestMatchers("/css/**", "/js/**").permitAll()
                     // Public authentication login route
                     .requestMatchers("/api/auth/login").permitAll()

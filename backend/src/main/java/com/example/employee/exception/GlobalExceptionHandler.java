@@ -53,6 +53,27 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(LeaveNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleLeaveNotFound(LeaveNotFoundException ex) {
+        logger.warn("Leave request not found: {}", ex.getMessage());
+        ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), HttpStatus.NOT_FOUND.value());
+        return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(LeaveOverlapException.class)
+    public ResponseEntity<ErrorResponse> handleLeaveOverlap(LeaveOverlapException ex) {
+        logger.warn("Leave request overlap conflict: {}", ex.getMessage());
+        ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), HttpStatus.CONFLICT.value());
+        return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(InvalidLeaveStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidLeaveState(InvalidLeaveStateException ex) {
+        logger.warn("Invalid leave state: {}", ex.getMessage());
+        ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), HttpStatus.BAD_REQUEST.value());
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationErrors(MethodArgumentNotValidException ex) {
         List<String> errors = new ArrayList<>();

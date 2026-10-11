@@ -17,6 +17,10 @@ const DEPT_API_BASE = (window.location.port === '8081' || window.location.port =
     ? `${window.location.origin}/api/departments`
     : 'http://localhost:8081/api/departments';
 
+const LEAVE_API_BASE = (window.location.port === '8081' || window.location.port === '8080')
+    ? `${window.location.origin}/api/leaves`
+    : 'http://localhost:8081/api/leaves';
+
 // Authentication State Helpers
 function getAuthToken() {
     return localStorage.getItem('ems_auth_token');
@@ -104,6 +108,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initChangePasswordModal();
     initRegisterUserModal();
     initTerminateModal();
+
+    if (document.getElementById('myLeavesTable')) {
+        initLeavesPage();
+    }
 
     if (currentRole === 'EMPLOYEE') {
         initEmployeeRoleView(user);
@@ -1495,3 +1503,499 @@ async function confirmDeleteDepartment() {
         if (confirmBtn) confirmBtn.disabled = false;
     }
 }
+
+/* ==========================================================================
+   Phase 3: Leave Management Module Frontend Logic
+   ========================================================================== */
+
+let myLeavesList = [];
+let allLeavesList = [];
+let cancelLeaveTargetId = null;
+let reviewLeaveTargetId = null;
+
+async function initLeavesPage() {
+    const user = getCurrentUser();
+
+    // Set today as min date for leave request inputs
+    const todayStr = new Date().toISOString().split('T')[0];
+    const startDateInput = document.getElementById('leaveStartDate');
+    const endDateInput = document.getElementById('leaveEndDate');
+    if (startDateInput) {
+        startDateInput.min = todayStr;
+        startDateInput.addEventListener('change', () => {
+            if (endDateInput) {
+                endDateInput.min = startDateInput.value;
+                if (endDateInput.value && endDateInput.value < startDateInput.value) {
+                    endDateInput.value = startDateInput.value;
+                }
+            }
+        });
+    }
+
+    // If Admin/HR, enable employee selection dropdown in leave request modal
+    if (user && (user.role === 'ADMIN' || user.role === 'HR')) {
+        const adminEmpGroup = document.getElementById('adminSelectEmployeeGroup');
+        if (adminEmpGroup) {
+            adminEmpGroup.classList.remove('d-none');
+            populateLeaveEmployeeSelect();
+        }
+    }
+
+    // Load user's own leaves
+    await loadMyLeaves();
+
+    // If ADMIN or HR, load all approvals
+    if (user && (user.role === 'ADMIN' || user.role === 'HR')) {
+        await loadAllLeaves();
+    } else {
+        // Hide management approvals tab for EMPLOYEE
+        const approvalsTab = document.getElementById('tabApprovalsItem');
+        if (approvalsTab) approvalsTab.classList.add('d-none');
+    }
+
+    updateLeaveDashboardMetrics();
+}
+
+async function populateLeaveEmployeeSelect() {
+    const select = document.getElementById('leaveTargetEmployeeId');
+    if (!select) return;
+
+    try {
+        const res = await fetchWithAuth(API_BASE_URL);
+        if (!res.ok) return;
+        const employees = await res.json();
+        select.innerHTML = '<option value="">-- Select Employee --</option>';
+        employees
+            .filter(e => e.status !== 'TERMINATED')
+            .forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e.id;
+                opt.textContent = `${e.fullName || `${e.firstName} ${e.lastName}`} (#${e.id}) - ${e.department || 'No Dept'}`;
+                select.appendChild(opt);
+            });
+    } catch (err) {
+        console.warn('Could not populate employee select for leave request:', err);
+    }
+}
+
+async function loadMyLeaves() {
+    const tbody = document.getElementById('myLeavesTableBody');
+    if (!tbody) return;
+
+    try {
+        const res = await fetchWithAuth(`${LEAVE_API_BASE}/my-leaves`);
+        if (!res.ok) {
+            throw new Error('Failed to load leave requests.');
+        }
+        myLeavesList = await res.json();
+        renderMyLeavesTable(myLeavesList);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger"><i class="bi bi-exclamation-triangle me-1"></i> ${err.message}</td></tr>`;
+    }
+}
+
+function renderMyLeavesTable(leaves) {
+    const tbody = document.getElementById('myLeavesTableBody');
+    if (!tbody) return;
+
+    if (!leaves || leaves.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-5 text-muted">
+            <i class="bi bi-calendar2-x fs-2 d-block mb-2 text-secondary"></i>
+            No leave requests found. Click <strong>Request Leave</strong> to submit one.
+        </td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = leaves.map(leave => {
+        const statusBadge = getLeaveStatusBadge(leave.status);
+        const days = calculateDaysBetween(leave.startDate, leave.endDate);
+        const canCancel = leave.status === 'PENDING';
+
+        const reviewInfo = leave.reviewedBy
+            ? `<span class="small text-secondary">${leave.reviewedBy}</span>${leave.reviewComments ? `<div class="small text-muted fst-italic">"${escapeHtml(leave.reviewComments)}"</div>` : ''}`
+            : '<span class="text-muted small">Pending</span>';
+
+        return `
+            <tr>
+                <td class="ps-3 fw-bold text-muted">#${leave.id}</td>
+                <td><span class="badge bg-light text-dark border">${leave.leaveType}</span></td>
+                <td>
+                    <div class="fw-semibold">${formatDate(leave.startDate)}</div>
+                    <small class="text-muted">to ${formatDate(leave.endDate)}</small>
+                </td>
+                <td><span class="badge bg-secondary-subtle text-dark">${days} day${days > 1 ? 's' : ''}</span></td>
+                <td><span class="small" title="${escapeHtml(leave.reason || '')}">${escapeHtml(truncate(leave.reason, 35))}</span></td>
+                <td>${statusBadge}</td>
+                <td>${reviewInfo}</td>
+                <td class="text-end pe-3">
+                    ${canCancel ? `
+                        <button class="btn btn-sm btn-outline-danger" onclick="openCancelLeaveModal(${leave.id})" title="Cancel Leave Request">
+                            <i class="bi bi-x-circle me-1"></i> Cancel
+                        </button>
+                    ` : '<span class="text-muted small">-</span>'}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function loadAllLeaves() {
+    const tbody = document.getElementById('allLeavesTableBody');
+    if (!tbody) return;
+
+    const statusFilter = document.getElementById('leaveApprovalStatusFilter');
+    const status = statusFilter ? statusFilter.value : '';
+
+    const url = status ? `${LEAVE_API_BASE}?status=${status}` : LEAVE_API_BASE;
+
+    try {
+        const res = await fetchWithAuth(url);
+        if (!res.ok) {
+            throw new Error('Failed to load leave approval requests.');
+        }
+        allLeavesList = await res.json();
+        renderAllLeavesTable(allLeavesList);
+        updatePendingApprovalsBadge();
+        updateLeaveDashboardMetrics();
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger"><i class="bi bi-exclamation-triangle me-1"></i> ${err.message}</td></tr>`;
+    }
+}
+
+function renderAllLeavesTable(leaves) {
+    const tbody = document.getElementById('allLeavesTableBody');
+    if (!tbody) return;
+
+    if (!leaves || leaves.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
+            No leave requests matching the criteria.
+        </td></tr>`;
+        return;
+    }
+
+    const currentUser = getCurrentUser();
+
+    tbody.innerHTML = leaves.map(leave => {
+        const statusBadge = getLeaveStatusBadge(leave.status);
+        const days = calculateDaysBetween(leave.startDate, leave.endDate);
+        const isPending = leave.status === 'PENDING';
+        const isSelf = currentUser && currentUser.employeeId && currentUser.employeeId === leave.employeeId;
+
+        const reviewInfo = leave.reviewedBy
+            ? `<span class="small text-secondary">${leave.reviewedBy}</span>${leave.reviewComments ? `<div class="small text-muted fst-italic">"${escapeHtml(leave.reviewComments)}"</div>` : ''}`
+            : '<span class="text-muted small">Pending</span>';
+
+        return `
+            <tr>
+                <td class="ps-3 fw-bold text-muted">#${leave.id}</td>
+                <td>
+                    <div class="fw-bold">${escapeHtml(leave.employeeName || 'Unknown')}</div>
+                    <div class="small text-muted">${escapeHtml(leave.departmentName || leave.employeeEmail || '')}</div>
+                </td>
+                <td><span class="badge bg-light text-dark border">${leave.leaveType}</span></td>
+                <td>
+                    <div class="fw-semibold">${formatDate(leave.startDate)}</div>
+                    <small class="text-muted">to ${formatDate(leave.endDate)}</small>
+                </td>
+                <td><span class="badge bg-secondary-subtle text-dark">${days} day${days > 1 ? 's' : ''}</span></td>
+                <td><span class="small" title="${escapeHtml(leave.reason || '')}">${escapeHtml(truncate(leave.reason, 30))}</span></td>
+                <td>${statusBadge}</td>
+                <td>${reviewInfo}</td>
+                <td class="text-end pe-3">
+                    ${isPending ? `
+                        <button class="btn btn-sm btn-primary-custom" onclick="openReviewLeaveModal(${leave.id})" ${isSelf ? 'title="Self-review is prohibited" disabled' : ''}>
+                            <i class="bi bi-pencil-square me-1"></i> Review
+                        </button>
+                    ` : '<span class="text-muted small">-</span>'}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterAllLeaves() {
+    const searchInput = document.getElementById('leaveApprovalSearchInput');
+    const query = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+    if (!query) {
+        renderAllLeavesTable(allLeavesList);
+        return;
+    }
+
+    const filtered = allLeavesList.filter(l => {
+        const name = (l.employeeName || '').toLowerCase();
+        const email = (l.employeeEmail || '').toLowerCase();
+        const reason = (l.reason || '').toLowerCase();
+        const dept = (l.departmentName || '').toLowerCase();
+        return name.includes(query) || email.includes(query) || reason.includes(query) || dept.includes(query);
+    });
+
+    renderAllLeavesTable(filtered);
+}
+
+function updatePendingApprovalsBadge() {
+    const badge = document.getElementById('pendingApprovalsBadge');
+    if (!badge) return;
+    const pendingCount = allLeavesList.filter(l => l.status === 'PENDING').length;
+    badge.textContent = pendingCount;
+    badge.className = `badge ms-1 ${pendingCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'}`;
+}
+
+function updateLeaveDashboardMetrics() {
+    const user = getCurrentUser();
+    const sourceList = (user && (user.role === 'ADMIN' || user.role === 'HR') && allLeavesList.length > 0)
+        ? allLeavesList
+        : myLeavesList;
+
+    const totalEl = document.getElementById('statLeaveTotal');
+    const pendingEl = document.getElementById('statLeavePending');
+    const approvedEl = document.getElementById('statLeaveApproved');
+    const rejectedEl = document.getElementById('statLeaveRejected');
+
+    if (!totalEl) return;
+
+    const total = sourceList.length;
+    const pending = sourceList.filter(l => l.status === 'PENDING').length;
+    const approved = sourceList.filter(l => l.status === 'APPROVED').length;
+    const rejected = sourceList.filter(l => l.status === 'REJECTED' || l.status === 'CANCELLED').length;
+
+    totalEl.textContent = total;
+    if (pendingEl) pendingEl.textContent = pending;
+    if (approvedEl) approvedEl.textContent = approved;
+    if (rejectedEl) rejectedEl.textContent = rejected;
+}
+
+function getLeaveStatusBadge(status) {
+    switch (status) {
+        case 'PENDING':
+            return '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Pending</span>';
+        case 'APPROVED':
+            return '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Approved</span>';
+        case 'REJECTED':
+            return '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Rejected</span>';
+        case 'CANCELLED':
+            return '<span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>Cancelled</span>';
+        default:
+            return `<span class="badge bg-light text-dark">${status}</span>`;
+    }
+}
+
+function calculateDaysBetween(startDateStr, endDateStr) {
+    if (!startDateStr || !endDateStr) return 1;
+    const s = new Date(startDateStr);
+    const e = new Date(endDateStr);
+    const diffTime = e - s;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays > 0 ? diffDays : 1;
+}
+
+async function handleLeaveSubmit(e) {
+    e.preventDefault();
+
+    const alertEl = document.getElementById('requestLeaveAlert');
+    const submitBtn = document.getElementById('btnSubmitLeave');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const leaveType = document.getElementById('leaveTypeSelect').value;
+    const startDate = document.getElementById('leaveStartDate').value;
+    const endDate = document.getElementById('leaveEndDate').value;
+    const reason = document.getElementById('leaveReason').value.trim();
+
+    const empSelect = document.getElementById('leaveTargetEmployeeId');
+    const employeeId = (empSelect && empSelect.value) ? parseInt(empSelect.value, 10) : null;
+
+    if (!startDate || !endDate || !reason) {
+        if (alertEl) {
+            alertEl.textContent = 'Please fill out all required fields.';
+            alertEl.classList.remove('d-none');
+        }
+        return;
+    }
+
+    if (endDate < startDate) {
+        if (alertEl) {
+            alertEl.textContent = 'Leave end date cannot be earlier than start date.';
+            alertEl.classList.remove('d-none');
+        }
+        return;
+    }
+
+    const payload = {
+        leaveType,
+        startDate,
+        endDate,
+        reason
+    };
+    if (employeeId) {
+        payload.employeeId = employeeId;
+    }
+
+    try {
+        if (submitBtn) submitBtn.disabled = true;
+        const res = await fetchWithAuth(LEAVE_API_BASE, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (res.status === 409) {
+            const err = await res.json();
+            throw new Error(err.message || 'Overlapping leave request exists for the selected dates.');
+        }
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to submit leave request.');
+        }
+
+        const modalEl = document.getElementById('requestLeaveModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        document.getElementById('requestLeaveForm').reset();
+        showToast('Leave request submitted successfully.', 'success');
+
+        await loadMyLeaves();
+        const user = getCurrentUser();
+        if (user && (user.role === 'ADMIN' || user.role === 'HR')) {
+            await loadAllLeaves();
+        }
+        updateLeaveDashboardMetrics();
+    } catch (err) {
+        if (alertEl) {
+            alertEl.textContent = err.message;
+            alertEl.classList.remove('d-none');
+        } else {
+            showToast(err.message, 'danger');
+        }
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
+function openReviewLeaveModal(id) {
+    const leave = allLeavesList.find(l => l.id === id);
+    if (!leave) return;
+
+    reviewLeaveTargetId = id;
+    const alertEl = document.getElementById('reviewLeaveAlert');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const nameEl = document.getElementById('reviewEmpName');
+    const typeEl = document.getElementById('reviewType');
+    const datesEl = document.getElementById('reviewDates');
+    const durEl = document.getElementById('reviewDuration');
+    const reasonEl = document.getElementById('reviewReason');
+    const confirmBtn = document.getElementById('btnConfirmReview');
+
+    const days = calculateDaysBetween(leave.startDate, leave.endDate);
+
+    if (nameEl) nameEl.textContent = `${leave.employeeName} (${leave.departmentName || 'No Dept'})`;
+    if (typeEl) typeEl.textContent = leave.leaveType;
+    if (datesEl) datesEl.textContent = `${formatDate(leave.startDate)} to ${formatDate(leave.endDate)}`;
+    if (durEl) durEl.textContent = `${days} day${days > 1 ? 's' : ''}`;
+    if (reasonEl) reasonEl.textContent = leave.reason || 'None provided';
+
+    const currentUser = getCurrentUser();
+    if (currentUser && currentUser.employeeId && currentUser.employeeId === leave.employeeId) {
+        if (alertEl) {
+            alertEl.textContent = 'Policy Violation: Reviewers cannot review or approve their own leave requests.';
+            alertEl.classList.remove('d-none');
+        }
+        if (confirmBtn) confirmBtn.disabled = true;
+    } else {
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+
+    const modalEl = document.getElementById('reviewLeaveModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+async function handleReviewSubmit(e) {
+    e.preventDefault();
+    if (!reviewLeaveTargetId) return;
+
+    const alertEl = document.getElementById('reviewLeaveAlert');
+    const confirmBtn = document.getElementById('btnConfirmReview');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const statusRadio = document.querySelector('input[name="reviewDecision"]:checked');
+    const status = statusRadio ? statusRadio.value : 'APPROVED';
+    const commentsInput = document.getElementById('reviewComments');
+    const reviewComments = commentsInput ? commentsInput.value.trim() : '';
+
+    try {
+        if (confirmBtn) confirmBtn.disabled = true;
+        const res = await fetchWithAuth(`${LEAVE_API_BASE}/${reviewLeaveTargetId}/review`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                status,
+                reviewComments
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to review leave request.');
+        }
+
+        const modalEl = document.getElementById('reviewLeaveModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        showToast(`Leave request ${status.toLowerCase()} successfully.`, 'success');
+        reviewLeaveTargetId = null;
+
+        await loadAllLeaves();
+        await loadMyLeaves();
+    } catch (err) {
+        if (alertEl) {
+            alertEl.textContent = err.message;
+            alertEl.classList.remove('d-none');
+        } else {
+            showToast(err.message, 'danger');
+        }
+    } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
+function openCancelLeaveModal(id) {
+    cancelLeaveTargetId = id;
+    const modalEl = document.getElementById('cancelLeaveModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+async function confirmCancelLeave() {
+    if (!cancelLeaveTargetId) return;
+
+    try {
+        const res = await fetchWithAuth(`${LEAVE_API_BASE}/${cancelLeaveTargetId}/cancel`, {
+            method: 'PUT'
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to cancel leave request.');
+        }
+
+        const modalEl = document.getElementById('cancelLeaveModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        showToast('Leave request cancelled successfully.', 'success');
+        cancelLeaveTargetId = null;
+
+        await loadMyLeaves();
+        const user = getCurrentUser();
+        if (user && (user.role === 'ADMIN' || user.role === 'HR')) {
+            await loadAllLeaves();
+        }
+        updateLeaveDashboardMetrics();
+    } catch (err) {
+        showToast(err.message, 'danger');
+    }
+}
+

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMS Pro | Department Management</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
+        <div class="container-fluid px-lg-4">
+            <a class="navbar-brand" href="index.html">
+                <div class="brand-icon"><i class="bi bi-people-fill"></i></div>
+                <span>EMS Pro</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-3">
+                    <li class="nav-item nav-admin-hr">
+                        <a class="nav-link" href="index.html"><i class="bi bi-speedometer2 me-1"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item nav-admin-hr">
+                        <a class="nav-link" href="employees.html"><i class="bi bi-person-lines-fill me-1"></i> Directory</a>
+                    </li>
+                    <li class="nav-item nav-admin-hr">
+                        <a class="nav-link" href="add-employee.html"><i class="bi bi-person-plus-fill me-1"></i> Add Employee</a>
+                    </li>
+                    <li class="nav-item admin-only">
+                        <a class="nav-link active" href="departments.html"><i class="bi bi-building me-1"></i> Departments</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="profile.html"><i class="bi bi-person-circle me-1"></i> My Profile</a>
+                    </li>
+                </ul>
+
+                <!-- Authenticated User Display & Actions -->
+                <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-light small text-secondary">User:</span>
+                        <div class="role-badge">
+                            <i class="bi bi-shield-check text-warning"></i>
+                            <span id="currentUsernameDisplay">admin</span>
+                            <span class="badge bg-secondary ms-1" id="currentRoleDisplay">ADMIN</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-info admin-only d-none" data-bs-toggle="modal" data-bs-target="#registerUserModal" title="Register New System User">
+                        <i class="bi bi-person-plus"></i> New User
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#changePasswordModal" title="Change Password">
+                        <i class="bi bi-key"></i> Password
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="logout()" title="Sign Out">
+                        <i class="bi bi-box-arrow-right"></i> Sign Out
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container-fluid px-lg-4 py-4">
+
+        <!-- Header & Action -->
+        <div class="d-md-flex align-items-center justify-content-between mb-4">
+            <div>
+                <h2 class="fw-bold text-dark mb-1"><i class="bi bi-building me-2 text-primary"></i>Department Management</h2>
+                <p class="text-muted mb-0">Create, inspect, and organize business units and personnel assignments.</p>
+            </div>
+            <div class="mt-3 mt-md-0 d-flex gap-2">
+                <button class="btn btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addDepartmentModal">
+                    <i class="bi bi-plus-circle-fill me-1"></i> Add New Department
+                </button>
+            </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="row g-3 mb-4" id="deptStatsRow">
+            <div class="col-12 col-sm-6 col-xl-4">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Total Departments</div>
+                            <div class="stat-value" id="statDeptTotal">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-primary">
+                            <i class="bi bi-building"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-4">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Assigned Employees</div>
+                            <div class="stat-value text-success" id="statDeptEmployees">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-success">
+                            <i class="bi bi-people"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-xl-4">
+                <div class="stat-card">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="stat-title">Largest Unit</div>
+                            <div class="stat-value text-info" id="statDeptLargest" style="font-size: 1.4rem;">--</div>
+                        </div>
+                        <div class="stat-icon-wrapper stat-icon-info">
+                            <i class="bi bi-award"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Department Table Card -->
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-header bg-white py-3 border-bottom d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-list-nested me-2 text-primary"></i>Department Directory
+                </h5>
+                <div class="d-flex gap-2">
+                    <div class="input-group input-group-sm" style="max-width: 280px;">
+                        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="deptSearchInput" class="form-control bg-light border-start-0" placeholder="Filter departments..." oninput="filterDepartmentsTable()">
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadDepartments()" title="Reload Departments">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <!-- Loading Spinner -->
+                <div id="deptLoadingSpinner" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2 mb-0">Loading departments...</p>
+                </div>
+
+                <!-- Empty State -->
+                <div id="deptEmptyState" class="text-center py-5 d-none">
+                    <i class="bi bi-folder-x fs-1 text-muted"></i>
+                    <h5 class="fw-bold mt-2 text-dark">No Departments Found</h5>
+                    <p class="text-muted mb-3">No department records are currently configured in the system.</p>
+                    <button class="btn btn-sm btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addDepartmentModal">
+                        <i class="bi bi-plus-lg me-1"></i> Add First Department
+                    </button>
+                </div>
+
+                <!-- Table -->
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 d-none" id="departmentsTable">
+                        <thead class="table-light text-secondary text-uppercase small">
+                            <tr>
+                                <th class="ps-4" style="width: 80px;">ID</th>
+                                <th>Department Name</th>
+                                <th>Description</th>
+                                <th class="text-center">Employees</th>
+                                <th>Created Date</th>
+                                <th class="text-end pe-4" style="width: 160px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="departmentsTableBody">
+                            <!-- Populated dynamically via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Modal: Add Department -->
+    <div class="modal fade" id="addDepartmentModal" tabindex="-1" aria-labelledby="addDeptModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="addDeptModalLabel">
+                        <i class="bi bi-building-add me-2"></i>Create New Department
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="addDepartmentForm" onsubmit="handleCreateDepartment(event)">
+                    <div class="modal-body p-4">
+                        <div id="addDeptAlert" class="alert alert-danger d-none" role="alert"></div>
+                        <div class="mb-3">
+                            <label for="newDeptName" class="form-label form-label-custom">Department Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="newDeptName" placeholder="e.g. Quality Assurance" required minlength="2" maxlength="100">
+                            <div class="form-text">Must be between 2 and 100 characters and unique.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newDeptDesc" class="form-label form-label-custom">Description</label>
+                            <textarea class="form-control" id="newDeptDesc" rows="3" placeholder="Optional description of functions and responsibilities..." maxlength="500"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom" id="btnSaveDepartment">
+                            <i class="bi bi-check-circle me-1"></i> Save Department
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Department -->
+    <div class="modal fade" id="editDepartmentModal" tabindex="-1" aria-labelledby="editDeptModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title fw-bold" id="editDeptModalLabel">
+                        <i class="bi bi-pencil-square me-2"></i>Edit Department
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="editDepartmentForm" onsubmit="handleUpdateDepartment(event)">
+                    <input type="hidden" id="editDeptId">
+                    <div class="modal-body p-4">
+                        <div id="editDeptAlert" class="alert alert-danger d-none" role="alert"></div>
+                        <div class="mb-3">
+                            <label for="editDeptName" class="form-label form-label-custom">Department Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="editDeptName" required minlength="2" maxlength="100">
+                            <div class="form-text">Must be unique across the organization.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDeptDesc" class="form-label form-label-custom">Description</label>
+                            <textarea class="form-control" id="editDeptDesc" rows="3" maxlength="500"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning" id="btnUpdateDepartment">
+                            <i class="bi bi-check-circle me-1"></i> Update Department
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Delete Department Confirmation -->
+    <div class="modal fade" id="deleteDepartmentModal" tabindex="-1" aria-labelledby="deleteDeptModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="deleteDeptModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Department
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <input type="hidden" id="deleteDeptId">
+                    <div id="deleteDeptAlert" class="alert alert-danger d-none" role="alert"></div>
+                    <div id="deleteDeptHasEmployeesAlert" class="alert alert-warning d-none" role="alert">
+                        <i class="bi bi-shield-lock-fill me-2"></i>
+                        <strong>Deletion Restricted:</strong> This department currently has <span id="deleteDeptEmpCount" class="fw-bold"></span> assigned employee(s). You must reassign all employees before this department can be deleted.
+                    </div>
+                    <p id="deleteDeptPromptText" class="mb-0">
+                        Are you sure you want to permanently delete department <strong id="deleteDeptName"></strong>? This operation cannot be undone.
+                    </p>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="btnConfirmDeleteDept" onclick="confirmDeleteDepartment()">
+                        <i class="bi bi-trash-fill me-1"></i> Delete Department
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Change Password -->
+    <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-key-fill me-2"></i>Change Password</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="changePasswordForm" onsubmit="handleChangePassword(event)">
+                    <div class="modal-body p-4">
+                        <div id="changePasswordAlert" class="alert alert-danger d-none" role="alert"></div>
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label form-label-custom">Current Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="currentPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label form-label-custom">New Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="newPassword" required minlength="6">
+                            <div class="form-text">Minimum 6 characters.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label form-label-custom">Confirm New Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="confirmPassword" required minlength="6">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning">Update Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Register New User (Admin Only) -->
+    <div class="modal fade" id="registerUserModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Register System User</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="registerUserForm" onsubmit="handleRegisterUser(event)">
+                    <div class="modal-body p-4">
+                        <div id="registerUserAlert" class="alert alert-danger d-none" role="alert"></div>
+                        <div class="mb-3">
+                            <label for="regUsername" class="form-label form-label-custom">Username <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="regUsername" required minlength="3" maxlength="50">
+                        </div>
+                        <div class="mb-3">
+                            <label for="regEmail" class="form-label form-label-custom">Email <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="regEmail" required maxlength="100">
+                        </div>
+                        <div class="mb-3">
+                            <label for="regPassword" class="form-label form-label-custom">Temporary Password <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="regPassword" required minlength="6">
+                        </div>
+                        <div class="mb-3">
+                            <label for="regRole" class="form-label form-label-custom">System Role <span class="text-danger">*</span></label>
+                            <select class="form-select" id="regRole" required>
+                                <option value="EMPLOYEE">EMPLOYEE</option>
+                                <option value="HR">HR</option>
+                                <option value="ADMIN">ADMIN</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="regEmployeeId" class="form-label form-label-custom">Linked Employee ID (Optional)</label>
+                            <input type="number" class="form-control" id="regEmployeeId" placeholder="e.g. 1">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary-custom">Register User</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1090;">
+        <div id="liveToast" class="toast align-items-center text-white border-0 shadow" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body d-flex align-items-center" id="toastMessage">
+                    <!-- Dynamic notification text -->
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Application JS -->
+    <script src="js/app.js"></script>
+</body>
+</html>

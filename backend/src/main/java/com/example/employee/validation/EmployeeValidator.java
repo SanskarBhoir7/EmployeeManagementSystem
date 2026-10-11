@@ -37,6 +37,9 @@ public class EmployeeValidator {
         if (dto.getEmail() == null || dto.getEmail().trim().isEmpty()) {
             throw new IllegalArgumentException("Email is required");
         }
+        if (dto.getDepartmentId() == null && (dto.getDepartment() == null || dto.getDepartment().trim().isEmpty())) {
+            throw new IllegalArgumentException("Department is required");
+        }
 
         LocalDate dob = dto.getDateOfBirth();
         LocalDate doj = dto.getJoiningDate();

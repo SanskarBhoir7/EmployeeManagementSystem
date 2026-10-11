@@ -13,6 +13,10 @@ const AUTH_API_BASE = (window.location.port === '8081' || window.location.port =
     ? `${window.location.origin}/api/auth`
     : 'http://localhost:8081/api/auth';
 
+const DEPT_API_BASE = (window.location.port === '8081' || window.location.port === '8080')
+    ? `${window.location.origin}/api/departments`
+    : 'http://localhost:8081/api/departments';
+
 // Authentication State Helpers
 function getAuthToken() {
     return localStorage.getItem('ems_auth_token');
@@ -105,6 +109,17 @@ document.addEventListener('DOMContentLoaded', () => {
         initEmployeeRoleView(user);
     } else {
         // ADMIN or HR
+        if (document.getElementById('departmentsTable')) {
+            if (currentRole !== 'ADMIN') {
+                showToast('Access Denied: Only ADMIN can manage departments.', 'warning');
+                setTimeout(() => window.location.href = 'index.html', 1200);
+                return;
+            }
+            loadDepartments();
+        }
+        if (document.getElementById('departmentFilter')) {
+            populateDepartmentFilterDropdown();
+        }
         if (document.getElementById('employeeTableBody')) {
             loadEmployees();
             loadStats();
@@ -154,6 +169,15 @@ async function initEmployeeRoleView(user) {
     // If an employee navigated directly to add/edit form, block access
     if (document.getElementById('employeeForm')) {
         showToast('Access Denied: Employees cannot create or edit personnel records.', 'warning');
+        setTimeout(() => {
+            window.location.href = 'profile.html';
+        }, 1200);
+        return;
+    }
+
+    // If an employee navigated directly to department management, block access
+    if (document.getElementById('departmentsTable')) {
+        showToast('Access Denied: Department management is restricted to administrators.', 'warning');
         setTimeout(() => {
             window.location.href = 'profile.html';
         }, 1200);
@@ -667,6 +691,8 @@ async function initFormPage() {
     const form = document.getElementById('employeeForm');
     if (!form) return;
 
+    await populateDepartmentDropdown();
+
     const urlParams = new URLSearchParams(window.location.search);
     const employeeId = urlParams.get('id');
 
@@ -698,7 +724,20 @@ async function loadEmployeeDataForEdit(id) {
         document.getElementById('phone').value = emp.phone || '';
         document.getElementById('dateOfBirth').value = emp.dateOfBirth || '';
         document.getElementById('gender').value = emp.gender || '';
-        document.getElementById('department').value = emp.department || '';
+        
+        // Select Department dropdown by ID or fallback by name
+        const deptSelect = document.getElementById('department');
+        if (emp.departmentId) {
+            deptSelect.value = emp.departmentId;
+        } else if (emp.department) {
+            for (let i = 0; i < deptSelect.options.length; i++) {
+                if (deptSelect.options[i].text.toLowerCase() === emp.department.toLowerCase()) {
+                    deptSelect.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
         document.getElementById('designation').value = emp.designation || '';
         document.getElementById('salary').value = emp.salary || '';
         document.getElementById('joiningDate').value = emp.joiningDate || '';
@@ -713,6 +752,12 @@ async function handleFormSubmit(e, employeeId) {
     e.preventDefault();
     clearFormErrors();
 
+    const deptSelect = document.getElementById('department');
+    const selectedDeptId = deptSelect.value ? parseInt(deptSelect.value, 10) : null;
+    const selectedDeptName = (deptSelect.selectedOptions && deptSelect.selectedOptions[0] && deptSelect.selectedOptions[0].value) 
+        ? deptSelect.selectedOptions[0].text 
+        : null;
+
     const payload = {
         firstName: document.getElementById('firstName').value.trim(),
         lastName: document.getElementById('lastName').value.trim(),
@@ -720,7 +765,8 @@ async function handleFormSubmit(e, employeeId) {
         phone: document.getElementById('phone').value.trim() || null,
         dateOfBirth: document.getElementById('dateOfBirth').value || null,
         gender: document.getElementById('gender').value || null,
-        department: document.getElementById('department').value.trim(),
+        departmentId: selectedDeptId,
+        department: selectedDeptName,
         designation: document.getElementById('designation').value.trim() || null,
         salary: parseFloat(document.getElementById('salary').value),
         joiningDate: document.getElementById('joiningDate').value,
@@ -732,7 +778,7 @@ async function handleFormSubmit(e, employeeId) {
     if (!payload.firstName) { showFieldError('firstName', 'First name cannot be blank'); isValid = false; }
     if (!payload.lastName) { showFieldError('lastName', 'Last name cannot be blank'); isValid = false; }
     if (!payload.email || !validateEmail(payload.email)) { showFieldError('email', 'A valid email address is required'); isValid = false; }
-    if (!payload.department) { showFieldError('department', 'Department is required'); isValid = false; }
+    if (!payload.departmentId) { showFieldError('department', 'Department is required'); isValid = false; }
     if (isNaN(payload.salary) || payload.salary <= 0 || payload.salary > 999999999.99) { showFieldError('salary', 'Salary must be a positive number up to 999,999,999.99'); isValid = false; }
 
     if (!payload.dateOfBirth) {
@@ -1073,4 +1119,379 @@ function exportToCSV() {
     link.click();
     document.body.removeChild(link);
     showToast('Employee table exported to CSV successfully!', 'success');
+}
+
+/**
+ * =========================================================================
+ * Phase 2: Department Management & Dropdown Integrations
+ * =========================================================================
+ */
+
+let allDepartments = [];
+let deleteDeptTargetId = null;
+
+async function populateDepartmentDropdown(selectedId = null) {
+    const deptSelect = document.getElementById('department');
+    if (!deptSelect) return;
+
+    try {
+        const res = await fetchWithAuth(DEPT_API_BASE);
+        if (!res || !res.ok) {
+            deptSelect.innerHTML = '<option value="">Failed to load departments</option>';
+            return;
+        }
+        const depts = await res.json();
+        deptSelect.innerHTML = '<option value="">Select Department</option>';
+        depts.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = d.name;
+            if (selectedId && (selectedId === d.id || selectedId === d.name)) {
+                opt.selected = true;
+            }
+            deptSelect.appendChild(opt);
+        });
+    } catch (err) {
+        console.error('Error fetching departments:', err);
+        deptSelect.innerHTML = '<option value="">Error loading departments</option>';
+    }
+}
+
+async function populateDepartmentFilterDropdown() {
+    const deptFilter = document.getElementById('departmentFilter');
+    if (!deptFilter) return;
+
+    try {
+        const res = await fetchWithAuth(DEPT_API_BASE);
+        if (!res || !res.ok) return;
+        const depts = await res.json();
+
+        const currentVal = deptFilter.value || 'ALL';
+        deptFilter.innerHTML = '<option value="ALL">All Departments</option>';
+        depts.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.name;
+            opt.textContent = d.name;
+            deptFilter.appendChild(opt);
+        });
+        if (currentVal && Array.from(deptFilter.options).some(o => o.value === currentVal)) {
+            deptFilter.value = currentVal;
+        }
+    } catch (err) {
+        console.warn('Could not populate department filter:', err);
+    }
+}
+
+async function loadDepartments() {
+    const spinner = document.getElementById('deptLoadingSpinner');
+    const table = document.getElementById('departmentsTable');
+    const emptyState = document.getElementById('deptEmptyState');
+
+    if (spinner) spinner.classList.remove('d-none');
+    if (table) table.classList.add('d-none');
+    if (emptyState) emptyState.classList.add('d-none');
+
+    try {
+        const res = await fetchWithAuth(DEPT_API_BASE);
+        if (!res || !res.ok) {
+            throw new Error(res ? `Status ${res.status}` : 'Network error');
+        }
+        allDepartments = await res.json();
+
+        updateDepartmentStats(allDepartments);
+
+        if (!allDepartments || allDepartments.length === 0) {
+            if (spinner) spinner.classList.add('d-none');
+            if (emptyState) emptyState.classList.remove('d-none');
+            return;
+        }
+
+        renderDepartmentsTable(allDepartments);
+
+        if (spinner) spinner.classList.add('d-none');
+        if (table) table.classList.remove('d-none');
+    } catch (err) {
+        if (spinner) spinner.classList.add('d-none');
+        showToast('Error loading departments: ' + err.message, 'danger');
+    }
+}
+
+function updateDepartmentStats(depts) {
+    const totalEl = document.getElementById('statDeptTotal');
+    const empEl = document.getElementById('statDeptEmployees');
+    const largestEl = document.getElementById('statDeptLargest');
+
+    if (!depts || depts.length === 0) {
+        if (totalEl) totalEl.textContent = '0';
+        if (empEl) empEl.textContent = '0';
+        if (largestEl) largestEl.textContent = 'None';
+        return;
+    }
+
+    if (totalEl) totalEl.textContent = depts.length;
+
+    let totalEmployees = 0;
+    let largestDept = depts[0];
+
+    depts.forEach(d => {
+        const count = d.employeeCount || 0;
+        totalEmployees += count;
+        if (count > (largestDept.employeeCount || 0)) {
+            largestDept = d;
+        }
+    });
+
+    if (empEl) empEl.textContent = totalEmployees;
+    if (largestEl) largestEl.textContent = `${largestDept.name} (${largestDept.employeeCount || 0})`;
+}
+
+function renderDepartmentsTable(depts) {
+    const tbody = document.getElementById('departmentsTableBody');
+    if (!tbody) return;
+
+    if (!depts || depts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-muted">No matching departments found.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = depts.map(d => {
+        const createdStr = d.createdAt ? formatDate(d.createdAt.split('T')[0]) : '—';
+        const empCount = d.employeeCount || 0;
+        const countBadge = empCount > 0
+            ? `<span class="badge bg-primary px-2 py-1"><i class="bi bi-people-fill me-1"></i>${empCount}</span>`
+            : `<span class="badge bg-light text-muted border px-2 py-1">0</span>`;
+
+        return `
+            <tr>
+                <td class="ps-4 fw-semibold text-muted">#${d.id}</td>
+                <td class="fw-bold text-dark">
+                    <i class="bi bi-building me-1 text-secondary"></i>${escapeHtml(d.name)}
+                </td>
+                <td class="text-muted small">${escapeHtml(d.description || '—')}</td>
+                <td class="text-center">${countBadge}</td>
+                <td class="text-secondary small">${createdStr}</td>
+                <td class="text-end pe-4">
+                    <button class="btn btn-sm btn-outline-warning me-1" 
+                            onclick="openEditDepartmentModal(${d.id}, '${escapeQuotes(d.name)}', '${escapeQuotes(d.description || '')}')" 
+                            title="Edit Department">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" 
+                            onclick="openDeleteDepartmentModal(${d.id}, '${escapeQuotes(d.name)}', ${empCount})" 
+                            title="Delete Department">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterDepartmentsTable() {
+    const query = document.getElementById('deptSearchInput')?.value.trim().toLowerCase() || '';
+    if (!query) {
+        renderDepartmentsTable(allDepartments);
+        return;
+    }
+
+    const filtered = allDepartments.filter(d =>
+        (d.name && d.name.toLowerCase().includes(query)) ||
+        (d.description && d.description.toLowerCase().includes(query)) ||
+        String(d.id).includes(query)
+    );
+    renderDepartmentsTable(filtered);
+}
+
+async function handleCreateDepartment(e) {
+    e.preventDefault();
+    const alertEl = document.getElementById('addDeptAlert');
+    const saveBtn = document.getElementById('btnSaveDepartment');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const name = document.getElementById('newDeptName').value.trim();
+    const description = document.getElementById('newDeptDesc').value.trim();
+
+    if (!name) {
+        if (alertEl) {
+            alertEl.textContent = 'Department name cannot be blank.';
+            alertEl.classList.remove('d-none');
+        }
+        return;
+    }
+
+    try {
+        if (saveBtn) saveBtn.disabled = true;
+        const res = await fetchWithAuth(DEPT_API_BASE, {
+            method: 'POST',
+            body: JSON.stringify({ name, description })
+        });
+
+        if (res.status === 409) {
+            const err = await res.json();
+            throw new Error(err.message || `Department '${name}' already exists.`);
+        }
+
+        if (!res.ok) {
+            const err = await res.json();
+            const msg = err.errors && err.errors.length ? err.errors.join(', ') : (err.message || 'Validation failed');
+            throw new Error(msg);
+        }
+
+        const modalEl = document.getElementById('addDepartmentModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        document.getElementById('addDepartmentForm').reset();
+        showToast(`Department '${name}' created successfully!`, 'success');
+        await loadDepartments();
+    } catch (err) {
+        if (alertEl) {
+            alertEl.textContent = err.message;
+            alertEl.classList.remove('d-none');
+        } else {
+            showToast(err.message, 'danger');
+        }
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
+function openEditDepartmentModal(id, name, description) {
+    const alertEl = document.getElementById('editDeptAlert');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    document.getElementById('editDeptId').value = id;
+    document.getElementById('editDeptName').value = name;
+    document.getElementById('editDeptDesc').value = description;
+
+    const modalEl = document.getElementById('editDepartmentModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+async function handleUpdateDepartment(e) {
+    e.preventDefault();
+    const alertEl = document.getElementById('editDeptAlert');
+    const updateBtn = document.getElementById('btnUpdateDepartment');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    const id = document.getElementById('editDeptId').value;
+    const name = document.getElementById('editDeptName').value.trim();
+    const description = document.getElementById('editDeptDesc').value.trim();
+
+    if (!name) {
+        if (alertEl) {
+            alertEl.textContent = 'Department name cannot be blank.';
+            alertEl.classList.remove('d-none');
+        }
+        return;
+    }
+
+    try {
+        if (updateBtn) updateBtn.disabled = true;
+        const res = await fetchWithAuth(`${DEPT_API_BASE}/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name, description })
+        });
+
+        if (res.status === 409) {
+            const err = await res.json();
+            throw new Error(err.message || `Department with name '${name}' already exists.`);
+        }
+
+        if (!res.ok) {
+            const err = await res.json();
+            const msg = err.errors && err.errors.length ? err.errors.join(', ') : (err.message || 'Update failed');
+            throw new Error(msg);
+        }
+
+        const modalEl = document.getElementById('editDepartmentModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        showToast(`Department '${name}' updated successfully!`, 'success');
+        await loadDepartments();
+    } catch (err) {
+        if (alertEl) {
+            alertEl.textContent = err.message;
+            alertEl.classList.remove('d-none');
+        } else {
+            showToast(err.message, 'danger');
+        }
+    } finally {
+        if (updateBtn) updateBtn.disabled = false;
+    }
+}
+
+function openDeleteDepartmentModal(id, name, employeeCount) {
+    deleteDeptTargetId = id;
+    const alertEl = document.getElementById('deleteDeptAlert');
+    const hasEmployeesAlert = document.getElementById('deleteDeptHasEmployeesAlert');
+    const confirmBtn = document.getElementById('btnConfirmDeleteDept');
+    const nameSpan = document.getElementById('deleteDeptName');
+    const empCountSpan = document.getElementById('deleteDeptEmpCount');
+
+    if (alertEl) alertEl.classList.add('d-none');
+    if (nameSpan) nameSpan.textContent = name;
+    if (empCountSpan) empCountSpan.textContent = employeeCount;
+
+    if (employeeCount > 0) {
+        if (hasEmployeesAlert) hasEmployeesAlert.classList.remove('d-none');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.title = 'Cannot delete a department with assigned employees';
+        }
+    } else {
+        if (hasEmployeesAlert) hasEmployeesAlert.classList.add('d-none');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.title = '';
+        }
+    }
+
+    const modalEl = document.getElementById('deleteDepartmentModal');
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+async function confirmDeleteDepartment() {
+    if (!deleteDeptTargetId) return;
+
+    const alertEl = document.getElementById('deleteDeptAlert');
+    const confirmBtn = document.getElementById('btnConfirmDeleteDept');
+    if (alertEl) alertEl.classList.add('d-none');
+
+    try {
+        if (confirmBtn) confirmBtn.disabled = true;
+        const res = await fetchWithAuth(`${DEPT_API_BASE}/${deleteDeptTargetId}`, {
+            method: 'DELETE'
+        });
+
+        if (res.status === 409) {
+            const err = await res.json();
+            throw new Error(err.message || 'Cannot delete department with assigned employees.');
+        }
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to delete department.');
+        }
+
+        const modalEl = document.getElementById('deleteDepartmentModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        showToast('Department deleted successfully.', 'success');
+        deleteDeptTargetId = null;
+        await loadDepartments();
+    } catch (err) {
+        if (alertEl) {
+            alertEl.textContent = err.message;
+            alertEl.classList.remove('d-none');
+        } else {
+            showToast(err.message, 'danger');
+        }
+    } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
 }

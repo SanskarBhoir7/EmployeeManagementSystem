@@ -15,6 +15,7 @@ public class EmployeeResponseDto {
     private String phone;
     private LocalDate dateOfBirth;
     private String gender;
+    private Long departmentId;
     private String department;
     private String designation;
     private BigDecimal salary;
@@ -42,7 +43,12 @@ public class EmployeeResponseDto {
         dto.setPhone(employee.getPhone());
         dto.setDateOfBirth(employee.getDateOfBirth());
         dto.setGender(employee.getGender());
-        dto.setDepartment(employee.getDepartment());
+        if (employee.getDepartment() != null) {
+            dto.setDepartmentId(employee.getDepartment().getId());
+            dto.setDepartment(employee.getDepartment().getName());
+        } else {
+            dto.setDepartment(employee.getLegacyDepartment());
+        }
         dto.setDesignation(employee.getDesignation());
         dto.setSalary(employee.getSalary());
         dto.setJoiningDate(employee.getJoiningDate());
@@ -118,6 +124,14 @@ public class EmployeeResponseDto {
 
     public void setGender(String gender) {
         this.gender = gender;
+    }
+
+    public Long getDepartmentId() {
+        return departmentId;
+    }
+
+    public void setDepartmentId(Long departmentId) {
+        this.departmentId = departmentId;
     }
 
     public String getDepartment() {

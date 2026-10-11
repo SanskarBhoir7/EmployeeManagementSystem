@@ -33,8 +33,12 @@ public class Employee {
     @Column(name = "gender", length = 20)
     private String gender;
 
-    @Column(name = "department", nullable = false, length = 50)
-    private String department;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
+    @Column(name = "department", length = 50)
+    private String legacyDepartment;
 
     @Column(name = "designation", length = 100)
     private String designation;
@@ -77,7 +81,7 @@ public class Employee {
         this.phone = phone;
         this.dateOfBirth = dateOfBirth;
         this.gender = gender;
-        this.department = department;
+        this.legacyDepartment = department;
         this.designation = designation;
         this.salary = salary;
         this.joiningDate = joiningDate;
@@ -103,12 +107,62 @@ public class Employee {
         this.phone = phone;
         this.dateOfBirth = dateOfBirth;
         this.gender = gender;
-        this.department = department;
+        this.legacyDepartment = department;
         this.designation = designation;
         this.salary = salary;
         this.joiningDate = joiningDate;
         this.address = address;
         this.status = status != null ? status : EmploymentStatus.ACTIVE;
+    }
+
+    public Employee(Long id, String firstName, String lastName, String email, String phone,
+                    LocalDate dateOfBirth, String gender, Department department, String designation,
+                    BigDecimal salary, LocalDate joiningDate, String address, EmploymentStatus status) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.email = email;
+        this.phone = phone;
+        this.dateOfBirth = dateOfBirth;
+        this.gender = gender;
+        this.department = department;
+        if (department != null) {
+            this.legacyDepartment = department.getName();
+        }
+        this.designation = designation;
+        this.salary = salary;
+        this.joiningDate = joiningDate;
+        this.address = address;
+        this.status = status != null ? status : EmploymentStatus.ACTIVE;
+    }
+
+    public Employee(Long id, String firstName, String lastName, String email, String phone,
+                    LocalDate dateOfBirth, String gender, Department department, String designation,
+                    BigDecimal salary, LocalDate joiningDate, String address, String status) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.email = email;
+        this.phone = phone;
+        this.dateOfBirth = dateOfBirth;
+        this.gender = gender;
+        this.department = department;
+        if (department != null) {
+            this.legacyDepartment = department.getName();
+        }
+        this.designation = designation;
+        this.salary = salary;
+        this.joiningDate = joiningDate;
+        this.address = address;
+        if (status != null && !status.isBlank()) {
+            try {
+                this.status = EmploymentStatus.valueOf(status.trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                this.status = EmploymentStatus.ACTIVE;
+            }
+        } else {
+            this.status = EmploymentStatus.ACTIVE;
+        }
     }
 
     @PrePersist
@@ -182,12 +236,30 @@ public class Employee {
         this.gender = gender;
     }
 
-    public String getDepartment() {
+    public Department getDepartment() {
         return department;
     }
 
-    public void setDepartment(String department) {
+    public void setDepartment(Department department) {
         this.department = department;
+        if (department != null) {
+            this.legacyDepartment = department.getName();
+        }
+    }
+
+    public String getLegacyDepartment() {
+        return legacyDepartment;
+    }
+
+    public void setLegacyDepartment(String legacyDepartment) {
+        this.legacyDepartment = legacyDepartment;
+    }
+
+    public String getDepartmentName() {
+        if (this.department != null) {
+            return this.department.getName();
+        }
+        return this.legacyDepartment;
     }
 
     public String getDesignation() {

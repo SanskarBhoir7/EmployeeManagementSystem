@@ -214,6 +214,7 @@
                     role: data.role,
                     employeeId: data.employeeId
                 }));
+                // Keep backward compatibility for existing FA-I role badge
                 localStorage.setItem('ems_role', data.role);
 
                 showAlert('Sign in successful! Redirecting...', 'success');

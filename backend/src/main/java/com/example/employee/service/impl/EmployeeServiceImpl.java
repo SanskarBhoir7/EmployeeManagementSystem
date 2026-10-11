@@ -3,11 +3,14 @@ package com.example.employee.service.impl;
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
 import com.example.employee.dto.TerminateEmployeeRequestDto;
+import com.example.employee.entity.Department;
 import com.example.employee.entity.Employee;
 import com.example.employee.entity.EmploymentStatus;
 import com.example.employee.entity.Role;
+import com.example.employee.exception.DepartmentNotFoundException;
 import com.example.employee.exception.DuplicateEmailException;
 import com.example.employee.exception.EmployeeNotFoundException;
+import com.example.employee.repository.DepartmentRepository;
 import com.example.employee.repository.EmployeeRepository;
 import com.example.employee.repository.UserRepository;
 import com.example.employee.service.EmployeeService;
@@ -27,14 +30,17 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final EmployeeValidator employeeValidator;
     private final UserRepository userRepository;
+    private final DepartmentRepository departmentRepository;
 
     @Autowired
     public EmployeeServiceImpl(EmployeeRepository employeeRepository,
                                EmployeeValidator employeeValidator,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               DepartmentRepository departmentRepository) {
         this.employeeRepository = employeeRepository;
         this.employeeValidator = employeeValidator;
         this.userRepository = userRepository;
+        this.departmentRepository = departmentRepository;
     }
 
     @Override
@@ -237,7 +243,20 @@ public class EmployeeServiceImpl implements EmployeeService {
         employee.setPhone(dto.getPhone() != null ? dto.getPhone().trim() : null);
         employee.setDateOfBirth(dto.getDateOfBirth());
         employee.setGender(dto.getGender() != null ? dto.getGender().trim() : null);
-        employee.setDepartment(dto.getDepartment().trim());
+
+        // Resolve Department
+        Department dept;
+        if (dto.getDepartmentId() != null) {
+            dept = departmentRepository.findById(dto.getDepartmentId())
+                    .orElseThrow(() -> new DepartmentNotFoundException(dto.getDepartmentId()));
+        } else if (dto.getDepartment() != null && !dto.getDepartment().trim().isEmpty()) {
+            dept = departmentRepository.findByNameIgnoreCase(dto.getDepartment().trim())
+                    .orElseThrow(() -> new DepartmentNotFoundException("Department '" + dto.getDepartment().trim() + "' not found"));
+        } else {
+            throw new IllegalArgumentException("Department is required");
+        }
+        employee.setDepartment(dept);
+
         employee.setDesignation(dto.getDesignation() != null ? dto.getDesignation().trim() : null);
         employee.setSalary(dto.getSalary());
         employee.setJoiningDate(dto.getJoiningDate());

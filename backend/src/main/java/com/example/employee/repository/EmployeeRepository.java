@@ -26,9 +26,25 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
            "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%'))")
     List<Employee> searchEmployees(@Param("query") String query);
 
-    List<Employee> findByDepartmentIgnoreCase(String department);
+    @Query("SELECT e FROM Employee e WHERE " +
+           "(e.department IS NOT NULL AND LOWER(e.department.name) = LOWER(:department)) OR " +
+           "(e.legacyDepartment IS NOT NULL AND LOWER(e.legacyDepartment) = LOWER(:department))")
+    List<Employee> findByDepartmentIgnoreCase(@Param("department") String department);
 
     List<Employee> findByStatus(EmploymentStatus status);
 
-    List<Employee> findByDepartmentIgnoreCaseAndStatus(String department, EmploymentStatus status);
+    @Query("SELECT e FROM Employee e WHERE " +
+           "((e.department IS NOT NULL AND LOWER(e.department.name) = LOWER(:department)) OR " +
+           "(e.legacyDepartment IS NOT NULL AND LOWER(e.legacyDepartment) = LOWER(:department))) AND " +
+           "e.status = :status")
+    List<Employee> findByDepartmentIgnoreCaseAndStatus(@Param("department") String department, @Param("status") EmploymentStatus status);
+
+    @Query("SELECT COUNT(e) FROM Employee e WHERE e.department IS NOT NULL AND e.department.id = :departmentId")
+    long countByDepartmentId(@Param("departmentId") Long departmentId);
+
+    @Query("SELECT e FROM Employee e WHERE e.department IS NOT NULL AND e.department.id = :departmentId")
+    List<Employee> findByDepartmentId(@Param("departmentId") Long departmentId);
+
+    @Query("SELECT e FROM Employee e WHERE e.department IS NULL")
+    List<Employee> findByDepartmentIsNull();
 }

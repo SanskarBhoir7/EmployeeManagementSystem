@@ -32,8 +32,9 @@ public class EmployeeRequestDto {
     @Size(max = 20, message = "Gender must not exceed 20 characters")
     private String gender;
 
-    @NotBlank(message = "Department is required")
-    @Size(min = 1, max = 50, message = "Department must not exceed 50 characters")
+    private Long departmentId;
+
+    @Size(max = 50, message = "Department must not exceed 50 characters")
     private String department;
 
     @Size(max = 100, message = "Designation must not exceed 100 characters")
@@ -53,6 +54,24 @@ public class EmployeeRequestDto {
     private String status;
 
     public EmployeeRequestDto() {
+    }
+
+    public EmployeeRequestDto(String firstName, String lastName, String email, String phone,
+                              LocalDate dateOfBirth, String gender, Long departmentId,
+                              String designation, BigDecimal salary, LocalDate joiningDate,
+                              String address, String status) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.email = email;
+        this.phone = phone;
+        this.dateOfBirth = dateOfBirth;
+        this.gender = gender;
+        this.departmentId = departmentId;
+        this.designation = designation;
+        this.salary = salary;
+        this.joiningDate = joiningDate;
+        this.address = address;
+        this.status = status;
     }
 
     public EmployeeRequestDto(String firstName, String lastName, String email, String phone,
@@ -120,6 +139,14 @@ public class EmployeeRequestDto {
 
     public void setGender(String gender) {
         this.gender = gender;
+    }
+
+    public Long getDepartmentId() {
+        return departmentId;
+    }
+
+    public void setDepartmentId(Long departmentId) {
+        this.departmentId = departmentId;
     }
 
     public String getDepartment() {

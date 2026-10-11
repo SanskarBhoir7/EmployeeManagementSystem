@@ -3,12 +3,15 @@ package com.example.employee.service;
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
 import com.example.employee.dto.TerminateEmployeeRequestDto;
+import com.example.employee.entity.Department;
 import com.example.employee.entity.Employee;
 import com.example.employee.entity.EmploymentStatus;
 import com.example.employee.entity.Role;
 import com.example.employee.entity.User;
+import com.example.employee.exception.DepartmentNotFoundException;
 import com.example.employee.exception.DuplicateEmailException;
 import com.example.employee.exception.EmployeeNotFoundException;
+import com.example.employee.repository.DepartmentRepository;
 import com.example.employee.repository.EmployeeRepository;
 import com.example.employee.repository.UserRepository;
 import com.example.employee.service.impl.EmployeeServiceImpl;
@@ -43,21 +46,31 @@ class EmployeeServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private DepartmentRepository departmentRepository;
+
     @InjectMocks
     private EmployeeServiceImpl employeeService;
 
     private Employee employee;
     private EmployeeRequestDto requestDto;
+    private Department itDepartment;
 
     @BeforeEach
     void setUp() {
+        itDepartment = new Department(1L, "IT", "Information Technology");
+
         employee = new Employee(1L, "Raj", "Malhotra", "raj.m@example.com", "9876543210",
-                LocalDate.of(1995, 1, 1), "Male", "IT", "Developer",
+                LocalDate.of(1995, 1, 1), "Male", itDepartment, "Developer",
                 new BigDecimal("60000.00"), LocalDate.of(2022, 1, 1), "Mumbai", EmploymentStatus.ACTIVE);
 
         requestDto = new EmployeeRequestDto("Raj", "Malhotra", "raj.m@example.com", "9876543210",
                 LocalDate.of(1995, 1, 1), "Male", "IT", "Developer",
                 new BigDecimal("60000.00"), LocalDate.of(2022, 1, 1), "Mumbai", "Active");
+        requestDto.setDepartmentId(1L);
+
+        lenient().when(departmentRepository.findById(1L)).thenReturn(Optional.of(itDepartment));
+        lenient().when(departmentRepository.findByNameIgnoreCase("IT")).thenReturn(Optional.of(itDepartment));
     }
 
     @Test
@@ -233,5 +246,43 @@ class EmployeeServiceTest {
 
         assertEquals(1, results.size());
         assertEquals("TERMINATED", results.get(0).getStatus());
+    }
+
+    @Test
+    @DisplayName("Should create employee successfully with explicit departmentId")
+    void testCreateEmployeeWithDepartmentId() {
+        requestDto.setDepartmentId(1L);
+        when(employeeRepository.existsByEmail(requestDto.getEmail())).thenReturn(false);
+        when(departmentRepository.findById(1L)).thenReturn(Optional.of(itDepartment));
+        when(employeeRepository.save(any(Employee.class))).thenReturn(employee);
+
+        EmployeeResponseDto result = employeeService.createEmployee(requestDto);
+
+        assertNotNull(result);
+        assertEquals(1L, result.getDepartmentId());
+        assertEquals("IT", result.getDepartment());
+    }
+
+    @Test
+    @DisplayName("Should reject employee creation when departmentId does not exist")
+    void testCreateEmployeeNonexistentDepartmentId() {
+        requestDto.setDepartmentId(999L);
+        when(employeeRepository.existsByEmail(requestDto.getEmail())).thenReturn(false);
+        when(departmentRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(DepartmentNotFoundException.class, () -> employeeService.createEmployee(requestDto));
+        verify(employeeRepository, never()).save(any(Employee.class));
+    }
+
+    @Test
+    @DisplayName("Should reject employee update when departmentId does not exist")
+    void testUpdateEmployeeNonexistentDepartmentId() {
+        requestDto.setDepartmentId(999L);
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(employeeRepository.existsByEmailAndIdNot(requestDto.getEmail(), 1L)).thenReturn(false);
+        when(departmentRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(DepartmentNotFoundException.class, () -> employeeService.updateEmployee(1L, requestDto));
+        verify(employeeRepository, never()).save(any(Employee.class));
     }
 }

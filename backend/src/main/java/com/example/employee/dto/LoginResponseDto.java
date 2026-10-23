@@ -1,7 +1,9 @@
 package com.example.employee.dto;
 
 import com.example.employee.entity.Role;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "Successful login result. Copy token into Swagger UI's Authorize dialog; do not include the Bearer prefix.")
 public class LoginResponseDto {
 
     private String token;

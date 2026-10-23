@@ -2,7 +2,9 @@ package com.example.employee.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "Department name and optional description for create or update operations.")
 public class DepartmentRequestDto {
 
     @NotBlank(message = "Department name is required")

@@ -64,6 +64,11 @@ public class SecurityConfig {
                     // Public static frontend assets and login page
                     .requestMatchers("/", "/index.html", "/employees.html", "/add-employee.html", "/departments.html", "/leaves.html", "/audit-logs.html", "/login.html", "/favicon.ico").permitAll()
                     .requestMatchers("/css/**", "/js/**").permitAll()
+                    // Public API documentation only; API routes below remain authenticated.
+                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                    // Public top-level liveness only; protect nested health and all other actuator paths.
+                    .requestMatchers("/actuator/health").permitAll()
+                    .requestMatchers("/actuator/**").authenticated()
                     // Public authentication login route
                     .requestMatchers("/api/auth/login").permitAll()
                     // Allow preflight OPTIONS requests

@@ -1,9 +1,11 @@
 package com.example.employee.dto;
 
 import jakarta.validation.constraints.*;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+@Schema(description = "Fields used to create or update an employee. Supply either departmentId or department.")
 public class EmployeeRequestDto {
 
     @NotBlank(message = "First name is required")

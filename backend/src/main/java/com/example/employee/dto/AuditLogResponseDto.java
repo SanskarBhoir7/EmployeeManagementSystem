@@ -2,9 +2,11 @@ package com.example.employee.dto;
 
 import com.example.employee.entity.AuditAction;
 import com.example.employee.entity.AuditLog;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 
+@Schema(description = "Audit event actor, action, entity, details, and timestamp.")
 public class AuditLogResponseDto {
 
     private Long id;

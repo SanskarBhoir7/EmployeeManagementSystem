@@ -1,7 +1,9 @@
 package com.example.employee.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "Username and password credentials for login.")
 public class LoginRequestDto {
 
     @NotBlank(message = "Username is required")

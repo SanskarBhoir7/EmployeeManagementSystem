@@ -1,8 +1,10 @@
 package com.example.employee.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Schema(description = "Standard API error body with message, HTTP status, timestamp, and optional validation details.")
 public class ErrorResponse {
 
     private String message;

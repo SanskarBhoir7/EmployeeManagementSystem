@@ -4,6 +4,8 @@ import com.example.employee.entity.Employee;
 import com.example.employee.entity.EmploymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -12,6 +14,33 @@ import java.util.Optional;
 
 @Repository
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
+
+    @Query(value = "SELECT e FROM Employee e WHERE " +
+            "(:query IS NULL OR " +
+            "LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(e.email) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+            "LOWER(e.designation) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
+            "(:department IS NULL OR " +
+            "(e.department IS NOT NULL AND LOWER(e.department.name) = LOWER(:department)) OR " +
+            "(e.legacyDepartment IS NOT NULL AND LOWER(e.legacyDepartment) = LOWER(:department))) AND " +
+            "(:status IS NULL OR e.status = :status)",
+            countQuery = "SELECT COUNT(e) FROM Employee e WHERE " +
+                    "(:query IS NULL OR " +
+                    "LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+                    "LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+                    "LOWER(e.email) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+                    "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+                    "LOWER(e.designation) LIKE LOWER(CONCAT('%', :query, '%'))) AND " +
+                    "(:department IS NULL OR " +
+                    "(e.department IS NOT NULL AND LOWER(e.department.name) = LOWER(:department)) OR " +
+                    "(e.legacyDepartment IS NOT NULL AND LOWER(e.legacyDepartment) = LOWER(:department))) AND " +
+                    "(:status IS NULL OR e.status = :status)")
+    Page<Employee> findDirectoryPage(@Param("query") String query,
+                                    @Param("department") String department,
+                                    @Param("status") EmploymentStatus status,
+                                    Pageable pageable);
 
     Optional<Employee> findByEmail(String email);
 

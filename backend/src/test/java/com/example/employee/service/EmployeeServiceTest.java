@@ -16,6 +16,9 @@ import com.example.employee.repository.EmployeeRepository;
 import com.example.employee.repository.UserRepository;
 import com.example.employee.service.impl.EmployeeServiceImpl;
 import com.example.employee.validation.EmployeeValidator;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,7 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -71,6 +75,24 @@ class EmployeeServiceTest {
 
         lenient().when(departmentRepository.findById(1L)).thenReturn(Optional.of(itDepartment));
         lenient().when(departmentRepository.findByNameIgnoreCase("IT")).thenReturn(Optional.of(itDepartment));
+    }
+
+    @Test
+    @DisplayName("Should map a paged employee directory result while preserving page metadata")
+    void testGetEmployeeDirectoryPage() {
+        var pageable = PageRequest.of(1, 10, Sort.by(Sort.Direction.DESC, "salary"));
+        when(employeeRepository.findDirectoryPage("Raj", "IT", EmploymentStatus.ACTIVE, pageable))
+                .thenReturn(new PageImpl<>(Collections.singletonList(employee), pageable, 21));
+
+        var result = employeeService.getEmployeeDirectoryPage("Raj", "IT", EmploymentStatus.ACTIVE, pageable);
+
+        assertEquals(1, result.getContent().size());
+        assertEquals("Raj", result.getContent().get(0).getFirstName());
+        assertEquals(21, result.getTotalElements());
+        assertEquals(3, result.getTotalPages());
+        assertEquals(1, result.getPage());
+        assertEquals(10, result.getSize());
+        verify(employeeRepository).findDirectoryPage("Raj", "IT", EmploymentStatus.ACTIVE, pageable);
     }
 
     @Test

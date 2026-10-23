@@ -3,8 +3,10 @@ package com.example.employee.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 
+@Schema(description = "Effective termination date and required reason for ending employment.")
 public class TerminateEmployeeRequestDto {
 
     @NotNull(message = "Termination effective date is required")

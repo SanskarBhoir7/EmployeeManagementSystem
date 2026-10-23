@@ -3,7 +3,9 @@ package com.example.employee.dto;
 import com.example.employee.entity.LeaveStatus;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "A leave review decision and optional reviewer comments.")
 public class LeaveReviewDto {
 
     @NotNull(message = "Review status is required")

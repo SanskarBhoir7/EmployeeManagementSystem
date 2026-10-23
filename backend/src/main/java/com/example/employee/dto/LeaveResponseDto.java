@@ -1,5 +1,7 @@
 package com.example.employee.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.example.employee.entity.LeaveRequest;
 import com.example.employee.entity.LeaveStatus;
 import com.example.employee.entity.LeaveType;
@@ -8,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
+@Schema(description = "Leave request, employee, review, and status details returned by leave APIs.")
 public class LeaveResponseDto {
 
     private Long id;

@@ -1,7 +1,9 @@
 package com.example.employee.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 
+@Schema(description = "Envelope used by selected API operations, containing success state, message, optional data, and timestamp.")
 public class ApiResponse<T> {
 
     private boolean success;

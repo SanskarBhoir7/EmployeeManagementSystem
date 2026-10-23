@@ -2,6 +2,7 @@ package com.example.employee.service.impl;
 
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
+import com.example.employee.dto.EmployeePageResponseDto;
 import com.example.employee.dto.TerminateEmployeeRequestDto;
 import com.example.employee.entity.Department;
 import com.example.employee.entity.Employee;
@@ -16,6 +17,8 @@ import com.example.employee.repository.UserRepository;
 import com.example.employee.service.EmployeeService;
 import com.example.employee.validation.EmployeeValidator;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -87,6 +90,16 @@ public class EmployeeServiceImpl implements EmployeeService {
         return employeeRepository.findAll().stream()
                 .map(EmployeeResponseDto::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public EmployeePageResponseDto getEmployeeDirectoryPage(String query, String department,
+                                                            EmploymentStatus status, Pageable pageable) {
+        Page<EmployeeResponseDto> page = employeeRepository
+                .findDirectoryPage(query, department, status, pageable)
+                .map(EmployeeResponseDto::fromEntity);
+        return EmployeePageResponseDto.from(page);
     }
 
     @Override

@@ -1,8 +1,11 @@
 package com.example.employee.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.example.employee.entity.Department;
 import java.time.LocalDateTime;
 
+@Schema(description = "Department details, including its employee count when provided by the service.")
 public class DepartmentResponseDto {
 
     private Long id;

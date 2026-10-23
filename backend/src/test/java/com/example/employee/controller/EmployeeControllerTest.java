@@ -2,12 +2,15 @@ package com.example.employee.controller;
 
 import com.example.employee.dto.EmployeeRequestDto;
 import com.example.employee.dto.EmployeeResponseDto;
+import com.example.employee.dto.EmployeePageResponseDto;
 import com.example.employee.entity.Employee;
 import com.example.employee.entity.Role;
 import com.example.employee.exception.DuplicateEmailException;
 import com.example.employee.exception.EmployeeNotFoundException;
 import com.example.employee.security.*;
 import com.example.employee.service.EmployeeService;
+import com.example.employee.service.EmployeeImportService;
+import com.example.employee.dto.EmployeeImportResponseDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,7 +20,10 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -40,6 +46,9 @@ class EmployeeControllerTest {
 
     @MockBean
     private EmployeeService employeeService;
+
+    @MockBean
+    private EmployeeImportService employeeImportService;
 
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
@@ -122,6 +131,72 @@ class EmployeeControllerTest {
     }
 
     @Test
+    @WithMockUser(roles = "HR")
+    @DisplayName("GET /api/employees/page - applies server pagination, sorting and combined filters")
+    void testPaginatedDirectoryWithCombinedFiltersAndSort() throws Exception {
+        EmployeePageResponseDto page = new EmployeePageResponseDto(
+                Arrays.asList(sampleResponseDto), 21, 5, 1, 5);
+        var expectedPageable = PageRequest.of(1, 5, Sort.by(Sort.Direction.DESC, "salary")
+                .and(Sort.by(Sort.Direction.ASC, "id")));
+        when(employeeService.getEmployeeDirectoryPage(eq("rahul"), eq("IT"),
+                eq(com.example.employee.entity.EmploymentStatus.ACTIVE),
+                eq(expectedPageable)))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/employees/page")
+                        .param("page", "1")
+                        .param("size", "5")
+                        .param("sort", "salary")
+                        .param("direction", "desc")
+                        .param("query", " rahul ")
+                        .param("department", " IT ")
+                        .param("status", "Active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].firstName").value("Rahul"))
+                .andExpect(jsonPath("$.totalElements").value(21))
+                .andExpect(jsonPath("$.totalPages").value(5))
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(5));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /api/employees/page - returns metadata for empty results")
+    void testPaginatedDirectoryEmptyResults() throws Exception {
+        when(employeeService.getEmployeeDirectoryPage(eq(null), eq(null), eq(null), any()))
+                .thenReturn(new EmployeePageResponseDto(java.util.Collections.emptyList(), 0, 0, 0, 10));
+
+        mockMvc.perform(get("/api/employees/page"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.totalPages").value(0))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(10));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("GET /api/employees/page - rejects invalid page, page size and sort fields")
+    void testPaginatedDirectoryRejectsInvalidParameters() throws Exception {
+        mockMvc.perform(get("/api/employees/page").param("page", "-1"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/employees/page").param("size", "101"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/employees/page").param("sort", "email"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    @DisplayName("GET /api/employees/page - is forbidden for employee role")
+    void testPaginatedDirectoryForbiddenForEmployee() throws Exception {
+        mockMvc.perform(get("/api/employees/page"))
+                .andExpect(status().isForbidden());
+        verify(employeeService, never()).getEmployeeDirectoryPage(any(), any(), any(), any());
+    }
+
+    @Test
     @WithMockUser(roles = "ADMIN")
     @DisplayName("GET /api/employees/{id} - Should return 200 when exists for ADMIN")
     void testGetEmployeeByIdSuccess() throws Exception {
@@ -190,6 +265,33 @@ class EmployeeControllerTest {
                     int status = result.getResponse().getStatus();
                     org.junit.jupiter.api.Assertions.assertTrue(status == 401 || status == 403);
                 });
+    }
+
+    @Test
+    @DisplayName("Paginated employee directory remains authenticated")
+    void testPaginatedDirectoryUnauthenticated() throws Exception {
+        mockMvc.perform(get("/api/employees/page"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Top-level Actuator health path does not require authentication")
+    void testActuatorHealthIsPublic() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(result -> {
+                    int status = result.getResponse().getStatus();
+                    org.junit.jupiter.api.Assertions.assertTrue(status != 401 && status != 403,
+                            "The top-level health path should not require authentication");
+                });
+    }
+
+    @Test
+    @DisplayName("Nested health and other Actuator paths still require authentication")
+    void testNestedActuatorPathsRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/actuator/health/db"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/actuator/env"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -433,6 +535,44 @@ class EmployeeControllerTest {
                 .andExpect(jsonPath("$.pendingLeaves").isNumber())
                 .andExpect(jsonPath("$.approvedLeaves").isNumber())
                 .andExpect(jsonPath("$.rejectedLeaves").isNumber());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void employeeImportIsAvailableToAdmin() throws Exception {
+        when(employeeImportService.importEmployees(any())).thenReturn(new EmployeeImportResponseDto(1, 1, 0, java.util.List.of()));
+        MockMultipartFile file = new MockMultipartFile("file", "employees.csv", "text/csv", "data".getBytes());
+
+        mockMvc.perform(multipart("/api/employees/import").file(file))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importedCount").value(1));
+    }
+
+    @Test
+    @WithMockUser(roles = "HR")
+    void employeeImportIsAvailableToHr() throws Exception {
+        when(employeeImportService.importEmployees(any())).thenReturn(new EmployeeImportResponseDto(0, 0, 0, java.util.List.of()));
+        MockMultipartFile file = new MockMultipartFile("file", "employees.csv", "text/csv", "header".getBytes());
+
+        mockMvc.perform(multipart("/api/employees/import").file(file))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "EMPLOYEE")
+    void employeeImportIsForbiddenToEmployee() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "employees.csv", "text/csv", "header".getBytes());
+        mockMvc.perform(multipart("/api/employees/import").file(file))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(employeeImportService);
+    }
+
+    @Test
+    void employeeImportRequiresAuthentication() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "employees.csv", "text/csv", "header".getBytes());
+        mockMvc.perform(multipart("/api/employees/import").file(file))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(employeeImportService);
     }
 }
 

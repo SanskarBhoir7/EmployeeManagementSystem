@@ -2,7 +2,9 @@ package com.example.employee.dto;
 
 import com.example.employee.entity.Role;
 import com.example.employee.entity.User;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "Authenticated or newly created user account profile, with optional linked employee identity.")
 public class UserProfileDto {
 
     private Long id;

@@ -2,7 +2,9 @@ package com.example.employee.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "Current password and replacement password for the authenticated account.")
 public class ChangePasswordRequestDto {
 
     @NotBlank(message = "Current password is required")

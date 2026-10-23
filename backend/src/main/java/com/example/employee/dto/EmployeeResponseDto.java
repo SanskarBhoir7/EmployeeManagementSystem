@@ -4,7 +4,9 @@ import com.example.employee.entity.Employee;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
+@Schema(description = "Employee details returned by employee APIs.")
 public class EmployeeResponseDto {
 
     private Long id;

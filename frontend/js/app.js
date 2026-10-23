@@ -333,7 +333,7 @@ function initEventListeners() {
             if (searchInput) searchInput.value = '';
             if (deptFilter) deptFilter.value = 'ALL';
             if (statusFilter) statusFilter.value = 'ALL';
-            loadEmployees();
+            applyFilters();
         });
     }
 
@@ -437,6 +437,8 @@ let currentSortColumn = 'id';
 let currentSortAsc = true;
 let currentDirectoryPage = 1;
 const directoryPageSize = 10;
+let directoryTotalPages = 0;
+let directoryRequestSequence = 0;
 
 function handleSortTable(columnKey) {
     if (currentSortColumn === columnKey) {
@@ -447,7 +449,7 @@ function handleSortTable(columnKey) {
     }
     updateSortIcons();
     currentDirectoryPage = 1;
-    renderEmployeeTable(currentEmployees);
+    loadEmployees();
 }
 
 function updateSortIcons() {
@@ -463,8 +465,9 @@ function updateSortIcons() {
 }
 
 function changeDirectoryPage(page) {
+    if (page < 1 || page > directoryTotalPages || page === currentDirectoryPage) return;
     currentDirectoryPage = page;
-    renderEmployeeTable(currentEmployees);
+    loadEmployees();
 }
 
 
@@ -472,10 +475,25 @@ function changeDirectoryPage(page) {
  * Fetch all employees from backend API (ADMIN & HR)
  */
 async function loadEmployees() {
+    const requestSequence = ++directoryRequestSequence;
     showLoading(true);
     try {
-        const response = await fetchWithAuth(API_BASE_URL);
+        const params = new URLSearchParams({
+            page: String(currentDirectoryPage - 1),
+            size: String(directoryPageSize),
+            sort: currentSortColumn,
+            direction: currentSortAsc ? 'asc' : 'desc'
+        });
+        const searchVal = document.getElementById('searchInput')?.value.trim() || '';
+        const deptVal = document.getElementById('departmentFilter')?.value || 'ALL';
+        const statusVal = document.getElementById('statusFilter')?.value || 'ALL';
+        if (searchVal) params.set('query', searchVal);
+        if (deptVal !== 'ALL') params.set('department', deptVal);
+        if (statusVal !== 'ALL') params.set('status', statusVal);
+
+        const response = await fetchWithAuth(`${API_BASE_URL}/page?${params.toString()}`);
         if (!response) return;
+        if (requestSequence !== directoryRequestSequence) return;
 
         if (response.status === 403) {
             showToast('Access Denied: You do not have permission to view the employee directory.', 'danger');
@@ -484,15 +502,25 @@ async function loadEmployees() {
         }
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const employees = await response.json();
-        currentEmployees = employees;
-        renderEmployeeTable(employees);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const pageData = await response.json();
+        if (requestSequence !== directoryRequestSequence) return;
+        if (pageData.totalPages > 0 && pageData.page >= pageData.totalPages) {
+            currentDirectoryPage = pageData.totalPages;
+            loadEmployees();
+            return;
+        }
+        currentDirectoryPage = pageData.totalPages === 0 ? 1 : pageData.page + 1;
+        directoryTotalPages = pageData.totalPages;
+        currentEmployees = pageData.content || [];
+        renderEmployeeTable(pageData);
     } catch (error) {
+        if (requestSequence !== directoryRequestSequence) return;
         console.error('Error loading employees:', error);
         showToast('Unable to connect to backend API.', 'danger');
         renderEmptyState('Failed to load employee records from server.');
     } finally {
-        showLoading(false);
+        if (requestSequence === directoryRequestSequence) showLoading(false);
     }
 }
 
@@ -500,51 +528,14 @@ async function loadEmployees() {
  * Filter and Search logic
  */
 async function applyFilters() {
-    const searchVal = document.getElementById('searchInput')?.value.trim() || '';
-    const deptVal = document.getElementById('departmentFilter')?.value || 'ALL';
-    const statusVal = document.getElementById('statusFilter')?.value || 'ALL';
-
-    showLoading(true);
-    try {
-        let url = API_BASE_URL;
-
-        if (searchVal && (deptVal === 'ALL' || !deptVal) && (statusVal === 'ALL' || !statusVal)) {
-            url = `${API_BASE_URL}/search?name=${encodeURIComponent(searchVal)}`;
-        } else {
-            const params = new URLSearchParams();
-            if (deptVal && deptVal !== 'ALL') params.append('department', deptVal);
-            if (statusVal && statusVal !== 'ALL') params.append('status', statusVal);
-            url = `${API_BASE_URL}?${params.toString()}`;
-        }
-
-        const res = await fetchWithAuth(url);
-        if (!res || !res.ok) throw new Error('Failed to filter employees');
-        let data = await res.json();
-
-        if (searchVal && (deptVal !== 'ALL' || statusVal !== 'ALL')) {
-            const query = searchVal.toLowerCase();
-            data = data.filter(e =>
-                (e.firstName && e.firstName.toLowerCase().includes(query)) ||
-                (e.lastName && e.lastName.toLowerCase().includes(query)) ||
-                (e.email && e.email.toLowerCase().includes(query)) ||
-                (e.designation && e.designation.toLowerCase().includes(query))
-            );
-        }
-
-        currentEmployees = data;
-        renderEmployeeTable(data);
-    } catch (err) {
-        console.error('Filter error:', err);
-        showToast('Error applying search/filters', 'danger');
-    } finally {
-        showLoading(false);
-    }
+    currentDirectoryPage = 1;
+    await loadEmployees();
 }
 
 /**
  * Render Employee Table with role-aware action buttons, sorting, and pagination
  */
-function renderEmployeeTable(employees) {
+function renderEmployeeTable(pageData) {
     const tbody = document.getElementById('employeeTableBody');
     const countDisplay = document.getElementById('tableCountDisplay');
     const paginationFooter = document.getElementById('employeePaginationFooter');
@@ -552,56 +543,21 @@ function renderEmployeeTable(employees) {
     const paginationSummary = document.getElementById('paginationSummary');
     if (!tbody) return;
 
-    if (!employees || employees.length === 0) {
-        if (countDisplay) countDisplay.textContent = 'Showing 0 employees';
+    const employees = pageData?.content || [];
+    if (countDisplay) {
+        countDisplay.textContent = `Showing ${employees.length} of ${pageData.totalElements} employee${pageData.totalElements === 1 ? '' : 's'}`;
+    }
+    if (!employees.length) {
         if (paginationSummary) paginationSummary.textContent = 'No employees to display';
         if (paginationControls) paginationControls.innerHTML = '';
         renderEmptyState('No employee records found matching your criteria.');
         return;
     }
-
-    // Usability: Sort dataset
-    const sorted = [...employees].sort((a, b) => {
-        let valA = a[currentSortColumn];
-        let valB = b[currentSortColumn];
-
-        if (currentSortColumn === 'name') {
-            valA = (a.fullName || `${a.firstName} ${a.lastName}`).toLowerCase();
-            valB = (b.fullName || `${b.firstName} ${b.lastName}`).toLowerCase();
-        } else if (currentSortColumn === 'salary') {
-            valA = parseFloat(a.salary || 0);
-            valB = parseFloat(b.salary || 0);
-        } else if (currentSortColumn === 'id') {
-            valA = a.id || 0;
-            valB = b.id || 0;
-        } else if (currentSortColumn === 'joiningDate') {
-            valA = a.joiningDate || '';
-            valB = b.joiningDate || '';
-        } else {
-            valA = (valA || '').toString().toLowerCase();
-            valB = (valB || '').toString().toLowerCase();
-        }
-
-        if (valA < valB) return currentSortAsc ? -1 : 1;
-        if (valA > valB) return currentSortAsc ? 1 : -1;
-        return 0;
-    });
-
-    const totalCount = sorted.length;
-    const totalPages = Math.max(1, Math.ceil(totalCount / directoryPageSize));
-    if (currentDirectoryPage > totalPages) currentDirectoryPage = totalPages;
-    if (currentDirectoryPage < 1) currentDirectoryPage = 1;
-
-    const startIdx = (currentDirectoryPage - 1) * directoryPageSize;
-    const endIdx = Math.min(startIdx + directoryPageSize, totalCount);
-    const pageRecords = sorted.slice(startIdx, endIdx);
-
-    if (countDisplay) {
-        countDisplay.textContent = `Showing ${pageRecords.length} of ${totalCount} employee${totalCount === 1 ? '' : 's'}`;
-    }
-
+    const startIdx = pageData.page * pageData.size;
+    const endIdx = Math.min(startIdx + employees.length, pageData.totalElements);
+    const totalPages = pageData.totalPages;
     if (paginationSummary) {
-        paginationSummary.textContent = `Showing ${startIdx + 1}–${endIdx} of ${totalCount} employees (Page ${currentDirectoryPage} of ${totalPages})`;
+        paginationSummary.textContent = `Showing ${startIdx + 1}–${endIdx} of ${pageData.totalElements} employees (Page ${pageData.page + 1} of ${totalPages})`;
     }
 
     // Render pagination buttons
@@ -634,7 +590,7 @@ function renderEmployeeTable(employees) {
         paginationControls.innerHTML = pagHtml;
     }
 
-    tbody.innerHTML = pageRecords.map(emp => {
+    tbody.innerHTML = employees.map(emp => {
         const initials = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase();
         const isTerminated = emp.status?.toUpperCase() === 'TERMINATED';
         const statusClass = emp.status?.toUpperCase() === 'ACTIVE'
@@ -1327,30 +1283,63 @@ function escapeQuotes(str) {
     return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
-function exportToCSV() {
-    if (!currentEmployees || currentEmployees.length === 0) {
+async function exportToCSV() {
+    const exportEmployees = [];
+    const params = new URLSearchParams({ page: '0', size: '100', sort: 'id', direction: 'asc' });
+    const searchVal = document.getElementById('searchInput')?.value.trim() || '';
+    const deptVal = document.getElementById('departmentFilter')?.value || 'ALL';
+    const statusVal = document.getElementById('statusFilter')?.value || 'ALL';
+    if (searchVal) params.set('query', searchVal);
+    if (deptVal !== 'ALL') params.set('department', deptVal);
+    if (statusVal !== 'ALL') params.set('status', statusVal);
+
+    try {
+        const firstResponse = await fetchWithAuth(`${API_BASE_URL}/page?${params.toString()}`);
+        if (!firstResponse || !firstResponse.ok) throw new Error('Could not export employee results.');
+        const firstPage = await firstResponse.json();
+        exportEmployees.push(...(firstPage.content || []));
+
+        for (let page = 1; page < firstPage.totalPages; page++) {
+            params.set('page', String(page));
+            const response = await fetchWithAuth(`${API_BASE_URL}/page?${params.toString()}`);
+            if (!response || !response.ok) throw new Error('Could not export all employee results.');
+            const pageData = await response.json();
+            exportEmployees.push(...(pageData.content || []));
+        }
+    } catch (error) {
+        showToast(error.message || 'Unable to export employee records.', 'danger');
+        return;
+    }
+
+    if (exportEmployees.length === 0) {
         showToast('No employee data available to export.', 'warning');
         return;
     }
 
     const headers = ["ID", "First Name", "Last Name", "Email", "Phone", "Gender", "Date of Birth", "Department", "Designation", "Salary", "Joining Date", "Status", "Address"];
-    const rows = currentEmployees.map(e => [
+    const csvCell = value => {
+        let text = String(value ?? '');
+        // Prevent spreadsheet formula execution for user-controlled values.
+        if (/^[\s]*[=+\-@\t\r]/.test(text)) text = `'${text}`;
+        return `"${text.replace(/"/g, '""')}"`;
+    };
+    const rows = exportEmployees.map(e => [
         e.id,
-        `"${e.firstName || ''}"`,
-        `"${e.lastName || ''}"`,
-        `"${e.email || ''}"`,
-        `"${e.phone || ''}"`,
-        `"${e.gender || ''}"`,
-        `"${e.dateOfBirth || ''}"`,
-        `"${e.department || ''}"`,
-        `"${e.designation || ''}"`,
+        e.firstName,
+        e.lastName,
+        e.email,
+        e.phone,
+        e.gender,
+        e.dateOfBirth,
+        e.department,
+        e.designation,
         e.salary || 0,
-        `"${e.joiningDate || ''}"`,
-        `"${e.status || ''}"`,
-        `"${(e.address || '').replace(/"/g, '""')}"`
-    ]);
+        e.joiningDate,
+        e.status,
+        e.address
+    ].map(csvCell));
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.map(csvCell).join(','), ...rows.map(r => r.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);

@@ -34,7 +34,7 @@ Managing employee records manually or across disparate spreadsheets is prone to 
 
 ### Database
 - **Engine:** MySQL Server 8.0
-- **Database Name:** `employee_db`
+- **Demo Database Name:** `ems_pro_demo` (isolated demo profile; do not point the demo at `employee_db`)
 - **Table:** `employees`
 
 ### Frontend
@@ -55,6 +55,7 @@ Managing employee records manually or across disparate spreadsheets is prone to 
 ```text
 IP-EmployeeDatabaseProject/
 ├── backend/
+│   ├── start-demo.ps1                              # Password-prompting isolated demo launcher
 │   ├── src/
 │   │   ├── main/
 │   │   │   ├── java/com/example/employee/
@@ -103,7 +104,8 @@ IP-EmployeeDatabaseProject/
 ├── database/
 │   ├── schema.sql                                  # DDL table creation script
 │   └── data.sql                                    # Sample insert statements
-└── README.md
+├── README.md
+└── MINI_PROJECT_REPORT_FORMAT.md                   # Mini project report structure and formatting guide
 ```
 
 ---
@@ -186,40 +188,48 @@ Base URL: `http://localhost:8081/api/employees`
 ## 6. How to Run the Application
 
 ### Prerequisites
-1. **Java JDK 21+** installed (`java -version`).
-2. **MySQL Server 8.0** running locally on port 3306.
-3. Database `employee_db` created (or created automatically via script).
+1. **Java JDK 21+** installed and available on `PATH`.
+2. **Apache Maven 3.9.x** installed and available on `PATH`.
+3. **MySQL Server 8.0** running locally on port 3306.
+4. An empty demo schema and dedicated MySQL account provisioned as described below.
 
-### Step 1: Configure Database Credentials
-Edit [application.properties](file:///c:/Users/Sanskar%20Bhoir/Project/IP-EmployeeDatabaseProject/backend/src/main/resources/application.properties) if your MySQL password differs:
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/employee_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-spring.datasource.username=root
-spring.datasource.password=Sb#031106
-server.port=8081
+### Step 1: Provision an Isolated Demo Database
+Sign in to MySQL as an administrator and create a database and account used only by the demo. Replace the password placeholder with a strong password you choose; do not commit or share it.
+```sql
+CREATE DATABASE ems_pro_demo
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER 'ems_demo'@'localhost' IDENTIFIED BY 'CHOOSE_A_STRONG_PASSWORD';
+GRANT ALL PRIVILEGES ON ems_pro_demo.* TO 'ems_demo'@'localhost';
 ```
 
-### Step 2: Start Spring Boot Application
-In PowerShell or terminal, navigate to the `backend` folder:
+If `ems_pro_demo` already exists, inspect it before using it. The application uses Flyway to create/update tables and seeds demo records only when this demo database is empty. Never configure the demo to use `employee_db` or a production database.
+
+### Step 2: Start the Demo
+Open PowerShell and run the launcher:
 ```powershell
-cd backend
-mvn spring-boot:run
+cd "C:\path\to\IP-EmployeeDatabaseProject\backend"
+.\start-demo.ps1
 ```
-*Note: If Maven is located in your `.m2/wrapper` cache:*
+The launcher asks for the `ems_demo` password without displaying it, creates a fresh JWT secret for this run, selects the `demo` profile, and starts Spring Boot on port 8081. If Windows blocks the script, allow it for the current PowerShell window only:
 ```powershell
-& "C:\Users\Sanskar Bhoir\.m2\wrapper\dists\apache-maven-3.9.16\0daed3be3ebd1c706f0e69e8b07c6b73f5cc4ea3dfce72a8d0ec2e849ca2ddb0\bin\mvn.cmd" spring-boot:run
+Set-ExecutionPolicy -Scope Process Bypass
+.\start-demo.ps1
 ```
-
-On first launch, Hibernate auto-creates the `employees` table and `DataInitializer` seeds 10 sample employees across IT, HR, Finance, Marketing, Sales, and Operations.
+Keep the PowerShell window open while using the application. Press `Ctrl+C` in that window to stop it. The seeded demo logins are `admin` / `Admin@123`, `hrmanager` / `Hr@123`, and `rahul.s` / `Emp@123`; use these only in the isolated demo database.
 
 ### Step 3: Access the Application
 Open your web browser and navigate to:
 - **Dashboard:** [http://localhost:8081/index.html](http://localhost:8081/index.html)
 - **Personnel Directory:** [http://localhost:8081/employees.html](http://localhost:8081/employees.html)
 - **Add Employee:** [http://localhost:8081/add-employee.html](http://localhost:8081/add-employee.html)
+- **Leave Management:** [http://localhost:8081/leaves.html](http://localhost:8081/leaves.html)
 - **REST API Endpoint:** [http://localhost:8081/api/employees](http://localhost:8081/api/employees)
 
 Alternatively, the frontend files in `frontend/index.html` can be opened with VS Code Live Server or directly in any browser—they automatically interact with the backend API running on `http://localhost:8081`.
+
+For the required mini project report sections and IP report font specifications, see [MINI_PROJECT_REPORT_FORMAT.md](MINI_PROJECT_REPORT_FORMAT.md).
 
 ---
 
